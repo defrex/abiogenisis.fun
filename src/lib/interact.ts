@@ -1,4 +1,4 @@
-import { concatUint8Arrays } from '@/lib/concat-uint8-arrays'
+import { concatUint8Arrays } from '@/lib/utils/concat-uint8-arrays'
 
 export const operations = {
   bufferRight: 1,
@@ -13,18 +13,33 @@ export const operations = {
   loopEnd: 10,
 }
 
+const operationValues = Object.values(operations)
+const operationsCap = 1024 * 2
+
 /**
  * Concatenate two 64 byte arrays and run then as a simple self-modifying Turing machine.
  *
  * Return the modified 64 byte arrays.
  */
-export function interact(particleA: Uint8Array, particleB: Uint8Array): [Uint8Array, Uint8Array] {
+export function interact(fragmentA: Uint8Array, fragmentB: Uint8Array): [Uint8Array, Uint8Array] {
   const buffer = new Uint8Array(128)
-  const program = concatUint8Arrays(particleA, particleB)
+  const program = concatUint8Arrays(fragmentA, fragmentB)
   let bufferHead = 0
   let programHead = 0
   let cursor = 0
+  let opsUsed = 0
   while (cursor < program.length) {
+    if (operationValues.includes(program[cursor])) {
+      opsUsed++
+      if (opsUsed % 64 === 0) {
+        console.log(opsUsed, 'ops')
+      }
+      if (opsUsed > operationsCap) {
+        console.warn('Too many operations used, breaking')
+        break
+      }
+    }
+
     switch (program[cursor]) {
       case operations.bufferRight:
         bufferHead++
@@ -92,5 +107,5 @@ export function interact(particleA: Uint8Array, particleB: Uint8Array): [Uint8Ar
     cursor++
   }
 
-  return [program.slice(0, particleA.length), program.slice(particleA.length)]
+  return [program.slice(0, fragmentA.length), program.slice(fragmentA.length)]
 }
