@@ -22,17 +22,26 @@ const operationsCap = 1024 * 2
  * Return the modified 64 byte arrays.
  */
 export function interact(fragmentA: Uint8Array, fragmentB: Uint8Array): [Uint8Array, Uint8Array] {
+  // console.log('interaction start', fragmentA, fragmentB)
+
   const buffer = new Uint8Array(128)
   const program = concatUint8Arrays(fragmentA, fragmentB)
+
+  if (!matchingLoops(program)) {
+    return [fragmentA, fragmentB]
+  }
+
   let bufferHead = 0
   let programHead = 0
   let cursor = 0
   let opsUsed = 0
   while (cursor < program.length) {
+    // console.log('executing', { cursor, byte: program[cursor] })
+
     if (operationValues.includes(program[cursor])) {
       opsUsed++
       if (opsUsed % 64 === 0) {
-        console.log(opsUsed, 'ops')
+        // console.log(opsUsed, 'ops')
       }
       if (opsUsed > operationsCap) {
         console.warn('Too many operations used, breaking')
@@ -107,5 +116,29 @@ export function interact(fragmentA: Uint8Array, fragmentB: Uint8Array): [Uint8Ar
     cursor++
   }
 
-  return [program.slice(0, fragmentA.length), program.slice(fragmentA.length)]
+  const result: [Uint8Array, Uint8Array] = [
+    program.slice(0, fragmentA.length),
+    program.slice(fragmentA.length),
+  ]
+
+  // console.log('interaction stop', result)
+
+  return result
+}
+
+function matchingLoops(program: Uint8Array): boolean {
+  let depth = 0
+  for (let i = 0; i < program.length; i++) {
+    if (program[i] === operations.loopStart) {
+      depth++
+    } else if (program[i] === operations.loopEnd) {
+      depth--
+    }
+    // If at any point depth goes negative, it means there's an unmatched loopEnd
+    if (depth < 0) {
+      return false
+    }
+  }
+  // If depth is not zero, it means there's an unmatched loopStart
+  return depth === 0
 }

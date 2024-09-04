@@ -5,76 +5,124 @@ import { Button } from '@/components/ui/button'
 import { Inline } from '@/components/ui/inline'
 import { Inset } from '@/components/ui/inset'
 import { Stack } from '@/components/ui/stack'
+import { Text } from '@/components/ui/text/text'
+import { compress } from '@/lib/compress'
 import { interact } from '@/lib/interact'
 import { randomFragment } from '@/lib/random-fragment'
-import { ToggleLeftIcon, ToggleRightIcon } from 'lucide-react'
+import { cn } from '@/lib/utils/cn'
 import { useCallback, useEffect, useState } from 'react'
 import { range } from 'remeda'
 
+let fragments: Uint8Array[] = []
+
 export default function Home() {
-  const [fragments, setFragments] = useState<Uint8Array[]>([])
-  const [selected, setSelected] = useState<number[]>([])
+  const [interactions, setInteractions] = useState<number | null>(null)
+  const [compressionRatio, setCompressionRatio] = useState<Array<[number, number]>>([])
+  const [tab, setTab] = useState('stats')
+  const [playing, setPlaying] = useState(false)
 
   useEffect(() => {
-    setFragments(range(0, 32).map(() => randomFragment()))
+    fragments = range(0, 1024).map(() => randomFragment())
+    setInteractions(0)
   }, [])
 
-  const handleToggleSelected = useCallback((fragmentIndex: number) => {
-    setSelected((selected) => {
-      if (selected.includes(fragmentIndex)) {
-        return selected.filter((i) => i !== fragmentIndex)
-      } else if (selected.length === 2) {
-        return selected
-      } else {
-        return [...selected, fragmentIndex]
-      }
-    })
+  const handleTogglePlaying = useCallback(() => {
+    setPlaying((playing) => !playing)
   }, [])
-
-  const handleInteract = useCallback(() => {
-    const [fragmentA, fragmentB] = selected.map((i) => fragments[i])
-    const [newFragmentA, newFragmentB] = interact(fragmentA, fragmentB)
-    console.log([fragmentA, fragmentB], [newFragmentA, newFragmentB])
-
-    setFragments((fragments) => {
-      const newFragments = [...fragments]
-      newFragments[selected[0]] = newFragmentA
-      newFragments[selected[1]] = newFragmentB
-      return newFragments
-    })
-  }, [fragments, selected])
 
   const handleInteractRandom = useCallback(() => {
     const fragmentAIndex = Math.floor(Math.random() * fragments.length)
     const fragmentBIndex = Math.floor(Math.random() * fragments.length)
-    setSelected([fragmentAIndex, fragmentBIndex])
 
-    const [fragmentA, fragmentB] = [fragments[fragmentAIndex], fragments[fragmentBIndex]]
-    const [newFragmentA, newFragmentB] = interact(fragmentA, fragmentB)
-    console.log([fragmentA, fragmentB], [newFragmentA, newFragmentB])
+    const [newFragmentA, newFragmentB] = interact(
+      fragments[fragmentAIndex],
+      fragments[fragmentBIndex],
+    )
+    fragments[fragmentAIndex] = newFragmentA
+    fragments[fragmentBIndex] = newFragmentB
 
-    setFragments((fragments) => {
-      const newFragments = [...fragments]
-      newFragments[fragmentAIndex] = newFragmentA
-      newFragments[fragmentBIndex] = newFragmentB
-      return newFragments
+    setInteractions((interactions) => {
+      return (interactions ?? 0) + 1
     })
-  }, [fragments])
+  }, [])
+
+  useEffect(() => {
+    async function run() {
+      if (interactions !== null && interactions % 512 === 0) {
+        const { ratio } = await compress(fragments)
+
+        setCompressionRatio((compressionRatio) => [...compressionRatio, [interactions, ratio]])
+      }
+    }
+    run()
+  }, [interactions])
+
+  useEffect(() => {
+    if (!playing) return
+
+    let canceled = false
+
+    requestAnimationFrame(function loop() {
+      if (canceled) return
+      handleInteractRandom()
+      requestAnimationFrame(loop)
+    })
+
+    return () => {
+      canceled = true
+    }
+  }, [handleInteractRandom, playing])
 
   return (
     <main className="container">
-      <Stack>
-        <Inset gap={[2, 0]}>
-          <Inline>
-            <Button
-              label="Interact"
-              onClick={(event) => {
-                event.preventDefault()
-                handleInteract()
-              }}
-              disabled={selected.length !== 2}
-            />
-
+      <Inset gap={[4, 2]}>
+        <Inline align="top">
+          <Stack gap={4} grow>
+            <Inline>
+              <Button
+                variant="ghost"
+                label="Fragments"
+                onClick={() => setTab('fragments')}
+                className={cn({
+                  'bg-neutral-600': tab === 'fragments',
+                })}
+              />
+              <Button
+                variant="ghost"
+                label="Stats"
+                onClick={() => setTab('stats')}
+                className={cn({
+                  'bg-neutral-600': tab === 'stats',
+                })}
+              />
+            </Inline>
+            {tab === 'fragments' ? (
+              <Stack>
+                {fragments.map((fragment, fragmentIndex) => (
+                  <Program program={fragment} key={fragmentIndex} />
+                ))}
+              </Stack>
+            ) : (
+              <Stack gap={4}>
+                <Stack>
+                  <Text value="Interactions" color="light" />
+                  <Text value={interactions} size="lg" />
+                </Stack>
+                <Stack>
+                  <Text value="Compression Ratio" color="light" />
+                  <Stack>
+                    {compressionRatio.map(([interactions, ratio]) => (
+                      <Inline key={interactions}>
+                        <Text value={interactions} />
+                        <Text value={ratio.toFixed(2)} />
+                      </Inline>
+                    ))}
+                  </Stack>
+                </Stack>
+              </Stack>
+            )}
+          </Stack>
+          <Stack>
             <Button
               label="Interact Random"
               onClick={(event) => {
@@ -82,27 +130,17 @@ export default function Home() {
                 handleInteractRandom()
               }}
             />
-          </Inline>
-        </Inset>
-        {fragments.map((fragment, fragmentIndex) => (
-          <Inline key={fragmentIndex} justify="center">
-            <a
-              href="#"
+
+            <Button
+              label={playing ? 'Stop' : 'Play'}
               onClick={(event) => {
                 event.preventDefault()
-                handleToggleSelected(fragmentIndex)
+                handleTogglePlaying()
               }}
-            >
-              {selected?.includes(fragmentIndex) ? (
-                <ToggleLeftIcon className="size-6" />
-              ) : (
-                <ToggleRightIcon className="size-6 text-neutral-600" />
-              )}
-            </a>
-            <Program program={fragment} />
-          </Inline>
-        ))}
-      </Stack>
+            />
+          </Stack>
+        </Inline>
+      </Inset>
     </main>
   )
 }
