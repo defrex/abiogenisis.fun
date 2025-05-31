@@ -1,13 +1,7 @@
 // Web Worker for running the abiogenesis simulation
 // This isolates the heavy computation from the UI thread
 
-// Copy of utility functions from the main thread
-function concatUint8Arrays(array1, array2) {
-  const concatenatedArray = new Uint8Array(array1.length + array2.length)
-  concatenatedArray.set(array1)
-  concatenatedArray.set(array2, array1.length)
-  return concatenatedArray
-}
+// Utility functions
 
 function randomFragment() {
   return new Uint8Array(64).map(() => Math.floor(Math.random() * 256))
@@ -27,8 +21,17 @@ const operations = {
   loopEnd: 10,
 }
 
-const operationValues = Object.values(operations)
+const operationSet = new Set(Object.values(operations))
 const operationsCap = 1024 * 2
+
+// Pre-allocated reusable buffers for 64-byte fragments
+const sharedBuffer = new Uint8Array(128)
+const sharedProgram = new Uint8Array(128)
+
+// Pre-compute operation name mapping for fast lookups
+const operationNameMap = new Map(
+  Object.entries(operations).map(([name, value]) => [value, name])
+)
 
 function matchingLoops(program) {
   let depth = 0
@@ -46,19 +49,15 @@ function matchingLoops(program) {
 }
 
 function interact(fragmentA, fragmentB) {
-  const startTime = Date.now()
-  
   try {
-    const buffer = new Uint8Array(128)
-    // Create copies to avoid modifying original fragments
-    const program = concatUint8Arrays(new Uint8Array(fragmentA), new Uint8Array(fragmentB))
+    // Reset shared buffer to zeros
+    sharedBuffer.fill(0)
+    
+    // Directly copy fragments into shared program buffer without creating intermediate arrays
+    sharedProgram.set(fragmentA, 0)
+    sharedProgram.set(fragmentB, 64)
 
-    if (!matchingLoops(program)) {
-      debugLog('DEBUG', 'Unmatched loops detected', { 
-        programLength: program.length,
-        fragmentALength: fragmentA.length,
-        fragmentBLength: fragmentB.length 
-      })
+    if (!matchingLoops(sharedProgram)) {
       return [fragmentA, fragmentB]
     }
 
@@ -67,165 +66,136 @@ function interact(fragmentA, fragmentB) {
     let cursor = 0
     let opsUsed = 0
     let loopDepth = 0
-    let maxLoopDepth = 0
     
-    while (cursor < program.length) {
-      if (operationValues.includes(program[cursor])) {
+    while (cursor < sharedProgram.length) {
+      const operation = sharedProgram[cursor]
+      if (operation >= 1 && operation <= 10) {
         opsUsed++
         
-        // Track operation usage
-        const opName = Object.keys(operations).find(key => operations[key] === program[cursor])
-        operationCounts[opName] = (operationCounts[opName] || 0) + 1
-        
-        if (opsUsed > operationsCap) {
-          debugLog('WARN', 'Operations cap exceeded', { 
-            opsUsed, 
-            operationsCap, 
-            cursor, 
-            programLength: program.length,
-            maxLoopDepth,
-            operationCounts: { ...operationCounts }
-          })
-          break
+        // Track operation usage - optimize by pre-computing reverse mapping
+        const opName = operationNameMap.get(operation)
+        if (opName) {
+          operationCounts[opName] = (operationCounts[opName] || 0) + 1
         }
         
-        // Check for runaway loops every 100 operations
-        if (opsUsed % 100 === 0) {
-          if (loopDepth > 10) {
-            debugLog('WARN', 'Deep loop nesting detected', { opsUsed, loopDepth, cursor })
-          }
+        if (opsUsed > operationsCap) {
+          break
         }
       }
 
-    switch (program[cursor]) {
-      case operations.bufferRight:
-        bufferHead++
-        if (bufferHead >= buffer.length) {
-          bufferHead = 0
-        }
-        break
-      case operations.bufferLeft:
-        bufferHead--
-        if (bufferHead < 0) {
-          bufferHead = buffer.length - 1
-        }
-        break
-      case operations.bufferIncrement:
-        buffer[bufferHead]++
-        break
-      case operations.bufferDecrement:
-        buffer[bufferHead]--
-        break
-      case operations.programRight:
-        programHead++
-        if (programHead >= program.length) {
-          programHead = 0
-        }
-        break
-      case operations.programLeft:
-        programHead--
-        if (programHead < 0) {
-          programHead = program.length - 1
-        }
-        break
-      case operations.programRead:
-        buffer[bufferHead] = program[programHead]
-        break
-      case operations.programWrite:
-        program[programHead] = buffer[bufferHead]
-        break
-      case operations.loopStart:
+    const op = sharedProgram[cursor]
+    if (op === 1) { // bufferRight
+        bufferHead = (bufferHead + 1) & 127
+    } else if (op === 2) { // bufferLeft
+        bufferHead = (bufferHead - 1) & 127
+    } else if (op === 3) { // bufferIncrement
+        sharedBuffer[bufferHead]++
+    } else if (op === 4) { // bufferDecrement
+        sharedBuffer[bufferHead]--
+    } else if (op === 5) { // programRight
+        programHead = (programHead + 1) & 127
+    } else if (op === 6) { // programLeft
+        programHead = (programHead - 1) & 127
+    } else if (op === 7) { // programRead
+        sharedBuffer[bufferHead] = sharedProgram[programHead]
+    } else if (op === 8) { // programWrite
+        sharedProgram[programHead] = sharedBuffer[bufferHead]
+    } else if (op === 9) { // loopStart
         loopDepth++
-        maxLoopDepth = Math.max(maxLoopDepth, loopDepth)
-        if (buffer[bufferHead] === 0) {
+        if (sharedBuffer[bufferHead] === 0) {
           let depth = 1
           while (depth > 0) {
             cursor++
-            if (cursor >= program.length) {
-              debugLog('ERROR', 'Loop cursor exceeded program length', { cursor, programLength: program.length, depth })
+            if (cursor >= sharedProgram.length) {
               throw new Error('Loop cursor out of bounds')
             }
-            if (program[cursor] === operations.loopStart) {
+            if (sharedProgram[cursor] === 9) {
               depth++
-            } else if (program[cursor] === operations.loopEnd) {
+            } else if (sharedProgram[cursor] === 10) {
               depth--
             }
           }
         }
-        break
-      case operations.loopEnd:
+    } else if (op === 10) { // loopEnd
         loopDepth--
-        if (buffer[bufferHead] !== 0) {
+        if (sharedBuffer[bufferHead] !== 0) {
           let depth = 1
           while (depth > 0) {
             cursor--
             if (cursor < 0) {
-              debugLog('ERROR', 'Loop cursor went negative', { cursor, depth })
               throw new Error('Loop cursor out of bounds')
             }
-            if (program[cursor] === operations.loopStart) {
+            if (sharedProgram[cursor] === 9) {
               depth--
-            } else if (program[cursor] === operations.loopEnd) {
+            } else if (sharedProgram[cursor] === 10) {
               depth++
             }
           }
         }
-        break
     }
       cursor++
     }
 
+    // Create new arrays for the results (fragments are always 64 bytes in the simulation)
     const result = [
-      program.slice(0, fragmentA.length),
-      program.slice(fragmentA.length),
+      sharedProgram.slice(0, 64),
+      sharedProgram.slice(64),
     ]
-    
-    const duration = Date.now() - startTime
-    totalInteractionTime += duration
     
     // Track operations for OPI calculation
     totalOperations += opsUsed
-    
-    if (duration > 50) { // Log slow interactions
-      slowInteractions++
-      debugLog('WARN', 'Slow interaction detected', { 
-        duration, 
-        opsUsed, 
-        maxLoopDepth,
-        programLength: program.length 
-      })
-    }
-    
-    // Log detailed stats occasionally
-    if (interactions % 1000 === 0) {
-      debugLog('INFO', 'Interaction stats', {
-        avgInteractionTime: totalInteractionTime / interactions,
-        slowInteractions,
-        operationCounts: { ...operationCounts }
-      })
-    }
     
     return result
     
   } catch (error) {
     errorCount++
-    debugLog('ERROR', 'Interact function error', { 
-      error: error.message,
-      errorCount,
-      stack: error.stack
-    })
     // Return original fragments on error
     return [fragmentA, fragmentB]
   }
 }
 
-// Compression function using gzip
+// Fast hash function for fragment arrays
+function hashFragments(fragments) {
+  let hash = 0
+  // Sample every 16th fragment for faster hashing
+  for (let i = 0; i < fragments.length; i += 16) {
+    const fragment = fragments[i]
+    // Use first, middle, and last bytes for quick hash
+    hash = ((hash << 5) - hash) + fragment[0] + fragment[32] + fragment[63]
+    hash = hash & hash // Convert to 32bit integer
+  }
+  return hash
+}
+
+// Compression function using gzip with sampling
 async function compress(fragments) {
-  const totalLength = fragments.reduce((acc, arr) => acc + arr.length, 0)
+  // Use sampling instead of compressing all fragments
+  const sampleIndices = new Set()
+  const step = Math.floor(fragments.length / COMPRESSION_SAMPLE_SIZE)
+  
+  // Select evenly distributed sample
+  for (let i = 0; i < fragments.length && sampleIndices.size < COMPRESSION_SAMPLE_SIZE; i += step) {
+    sampleIndices.add(i)
+  }
+  
+  // Also include recently changed fragments for better accuracy
+  for (const index of changedFragmentIndices) {
+    if (sampleIndices.size < COMPRESSION_SAMPLE_SIZE * 1.5) {
+      sampleIndices.add(index)
+    }
+  }
+  
+  // Build sample array
+  const sampleFragments = []
+  for (const index of sampleIndices) {
+    sampleFragments.push(fragments[index])
+  }
+  
+  const totalLength = sampleFragments.reduce((acc, arr) => acc + arr.length, 0)
   const concatenatedArray = new Uint8Array(totalLength)
   let offset = 0
 
-  for (const arr of fragments) {
+  for (const arr of sampleFragments) {
     concatenatedArray.set(arr, offset)
     offset += arr.length
   }
@@ -252,9 +222,11 @@ async function compress(fragments) {
   const ratio = compressed / uncompressed
 
   return {
-    uncompressed,
-    compressed,
+    uncompressed: fragments.length * 64, // Extrapolate to full size
+    compressed: Math.round((compressed / sampleFragments.length) * fragments.length),
     ratio,
+    sampled: true,
+    sampleSize: sampleFragments.length
   }
 }
 
@@ -264,6 +236,18 @@ let interactions = 0
 let isRunning = false
 let shouldStop = false
 
+// Delta tracking for efficient updates
+let changedFragmentIndices = new Set()
+let lastFullUpdate = 0
+const FULL_UPDATE_INTERVAL = 1000 // Send full update every 1000 interactions
+
+// Compression optimization state
+let compressionCache = new Map() // Cache compression results by fragment hash
+let lastCompressionHash = null
+let compressionInProgress = false
+const COMPRESSION_SAMPLE_SIZE = 64 // Sample 64 fragments instead of all 1024
+const COMPRESSION_CACHE_SIZE = 100 // Keep last 100 compression results
+
 // Debugging state
 let debugMode = false // Start with debug disabled for better performance
 let lastProgressTime = Date.now()
@@ -272,6 +256,11 @@ let errorCount = 0
 let lastInteractionTime = Date.now()
 let slowInteractions = 0
 let totalInteractionTime = 0
+
+// Performance tracking
+let interactionsPerSecond = 0
+let lastInteractionCount = 0
+let lastInteractionCountTime = Date.now()
 
 // OPI tracking state
 let totalOperations = 0
@@ -299,11 +288,19 @@ function debugLog(level, message, data = {}) {
 }
 
 // Initialize fragments
-function initializeFragments() {
-  fragments = Array.from({ length: 1024 }, () => randomFragment())
+function initializeFragments(count = 1024) {
+  fragments = Array.from({ length: count }, () => randomFragment())
   interactions = 0
   totalOperations = 0
   opsPerInteractionHistory = []
+  interactionsPerSecond = 0
+  lastInteractionCount = 0
+  lastInteractionCountTime = Date.now()
+  changedFragmentIndices.clear()
+  lastFullUpdate = 0
+  compressionCache.clear()
+  lastCompressionHash = null
+  compressionInProgress = false
 }
 
 // Perform a single interaction
@@ -318,8 +315,28 @@ function performInteraction() {
     const [newFragmentA, newFragmentB] = interact(originalA, originalB)
     
     // Check if fragments actually changed
-    const aChanged = !newFragmentA.every((val, idx) => val === originalA[idx])
-    const bChanged = !newFragmentB.every((val, idx) => val === originalB[idx])
+    let aChanged = false
+    for (let i = 0; i < 64; i++) {
+      if (newFragmentA[i] !== originalA[i]) {
+        aChanged = true
+        break
+      }
+    }
+    let bChanged = false
+    for (let i = 0; i < 64; i++) {
+      if (newFragmentB[i] !== originalB[i]) {
+        bChanged = true
+        break
+      }
+    }
+    
+    // Track changed fragments for delta updates
+    if (aChanged) {
+      changedFragmentIndices.add(fragmentAIndex)
+    }
+    if (bChanged) {
+      changedFragmentIndices.add(fragmentBIndex)
+    }
     
     // Only log fragment evolution occasionally to reduce spam
     if ((aChanged || bChanged) && interactions % 100 === 0) {
@@ -328,7 +345,8 @@ function performInteraction() {
         fragmentAIndex, 
         fragmentBIndex,
         aChanged,
-        bChanged
+        bChanged,
+        totalChangedFragments: changedFragmentIndices.size
       })
     }
     
@@ -360,23 +378,72 @@ async function runSimulation() {
       const loopStartTime = Date.now()
       
       // Perform batch of interactions
-      const batchSize = 10
+      const batchSize = 100
       for (let i = 0; i < batchSize && !shouldStop; i++) {
         performInteraction()
       }
       
-      // Send progress update
+      // Calculate interactions per second
+      const currentTime = Date.now()
+      const timeDelta = currentTime - lastInteractionCountTime
+      if (timeDelta >= 1000) { // Update every second
+        const interactionsDelta = interactions - lastInteractionCount
+        interactionsPerSecond = (interactionsDelta / timeDelta) * 1000
+        lastInteractionCount = interactions
+        lastInteractionCountTime = currentTime
+      }
+      
+      // Send progress update with delta optimization
       try {
-        self.postMessage({
-          type: 'progress',
-          interactions,
-          fragments: fragments.map(f => Array.from(f)) // Convert to regular arrays for transfer
-        })
-        lastProgressTime = Date.now()
-        // Only log progress occasionally
-        if (interactions % 1000 === 0) {
-          debugLog('DEBUG', 'Progress message sent', { interactions })
+        // Decide whether to send full update or delta
+        const shouldSendFullUpdate = interactions - lastFullUpdate >= FULL_UPDATE_INTERVAL
+        
+        if (shouldSendFullUpdate || changedFragmentIndices.size === 0) {
+          // Send full update
+          self.postMessage({
+            type: 'progress',
+            interactions,
+            interactionsPerSecond,
+            updateType: 'full',
+            fragments: fragments.map(f => Array.from(f)) // Convert to regular arrays for transfer
+          })
+          lastFullUpdate = interactions
+          changedFragmentIndices.clear()
+          
+          if (interactions % 1000 === 0) {
+            debugLog('DEBUG', 'Full progress update sent', { interactions, interactionsPerSecond })
+          }
+        } else {
+          // Send delta update with only changed fragments
+          const deltaUpdates = []
+          for (const index of changedFragmentIndices) {
+            deltaUpdates.push({
+              index,
+              fragment: Array.from(fragments[index])
+            })
+          }
+          
+          self.postMessage({
+            type: 'progress',
+            interactions,
+            interactionsPerSecond,
+            updateType: 'delta',
+            deltaUpdates
+          })
+          
+          // Clear changed indices after sending
+          changedFragmentIndices.clear()
+          
+          if (interactions % 100 === 0) {
+            debugLog('DEBUG', 'Delta progress update sent', { 
+              interactions, 
+              interactionsPerSecond,
+              deltaCount: deltaUpdates.length
+            })
+          }
         }
+        
+        lastProgressTime = currentTime
       } catch (error) {
         debugLog('ERROR', 'Failed to send progress message', { 
           error: error.message,
@@ -384,44 +451,90 @@ async function runSimulation() {
         })
       }
       
-      // Check if we need to calculate compression ratio and OPI
+      // Check if we need to calculate OPI (moved out of compression check)
       if (interactions % 512 === 0) {
-        debugLog('INFO', 'Calculating compression and OPI', { interactions })
-        try {
-          const compressionStart = Date.now()
-          const compressionResult = await compress(fragments)
-          const compressionDuration = Date.now() - compressionStart
-          
-          // Calculate current OPI
-          const currentOPI = interactions > 0 ? totalOperations / interactions : 0
-          opsPerInteractionHistory.push([interactions, currentOPI])
-          
-          debugLog('INFO', 'Compression and OPI completed', { 
-            interactions,
-            ratio: compressionResult.ratio,
-            currentOPI,
-            totalOperations,
-            duration: compressionDuration
-          })
-          
-          self.postMessage({
-            type: 'compression',
-            interactions,
-            ...compressionResult
-          })
-          
-          self.postMessage({
-            type: 'opi',
-            interactions,
-            opi: currentOPI,
-            totalOperations
-          })
-        } catch (compressionError) {
-          debugLog('ERROR', 'Compression failed', { 
-            error: compressionError.message,
-            interactions
-          })
-        }
+        // Calculate current OPI immediately (not blocked by compression)
+        const currentOPI = interactions > 0 ? totalOperations / interactions : 0
+        opsPerInteractionHistory.push([interactions, currentOPI])
+        
+        self.postMessage({
+          type: 'opi',
+          interactions,
+          opi: currentOPI,
+          totalOperations
+        })
+        
+        debugLog('INFO', 'OPI calculated', { 
+          interactions,
+          currentOPI,
+          totalOperations
+        })
+      }
+      
+      // Trigger compression calculation asynchronously (non-blocking)
+      if (interactions % 512 === 0 && !compressionInProgress) {
+        compressionInProgress = true
+        
+        // Calculate compression in the background
+        setTimeout(async () => {
+          try {
+            const fragmentsHash = hashFragments(fragments)
+            
+            // Check cache first
+            if (compressionCache.has(fragmentsHash)) {
+              const cachedResult = compressionCache.get(fragmentsHash)
+              debugLog('INFO', 'Using cached compression result', { 
+                interactions,
+                ratio: cachedResult.ratio,
+                cacheSize: compressionCache.size
+              })
+              
+              self.postMessage({
+                type: 'compression',
+                interactions,
+                ...cachedResult,
+                cached: true
+              })
+            } else {
+              // Perform actual compression
+              const compressionStart = Date.now()
+              const compressionResult = await compress(fragments)
+              const compressionDuration = Date.now() - compressionStart
+              
+              // Cache the result
+              compressionCache.set(fragmentsHash, compressionResult)
+              
+              // Limit cache size
+              if (compressionCache.size > COMPRESSION_CACHE_SIZE) {
+                const firstKey = compressionCache.keys().next().value
+                compressionCache.delete(firstKey)
+              }
+              
+              debugLog('INFO', 'Compression completed', { 
+                interactions,
+                ratio: compressionResult.ratio,
+                duration: compressionDuration,
+                sampled: compressionResult.sampled,
+                sampleSize: compressionResult.sampleSize
+              })
+              
+              self.postMessage({
+                type: 'compression',
+                interactions,
+                ...compressionResult
+              })
+            }
+            
+            lastCompressionHash = fragmentsHash
+          } catch (compressionError) {
+            debugLog('ERROR', 'Compression failed', { 
+              error: compressionError.message,
+              interactions
+            })
+          } finally {
+            compressionInProgress = false
+          }
+        }, 0) // Run in next tick to avoid blocking
       }
       
       // Monitor loop performance
@@ -478,24 +591,15 @@ self.onmessage = function(e) {
           debugLog('INFO', 'Testing basic communication')
           self.postMessage({ type: 'test', message: 'Worker is alive' })
           
-          initializeFragments()
-          debugLog('INFO', 'Fragments initialized', { count: fragments.length })
+          const fragmentCount = data.fragmentCount || 1024
+          initializeFragments(fragmentCount)
+          debugLog('INFO', 'Fragments initialized', { count: fragments.length, requested: fragmentCount })
           
-          // Try to send the response with a smaller payload first
-          debugLog('INFO', 'Attempting to send initialized message')
-          
-          // Test with just the first 10 fragments to see if the issue is message size
-          const fragmentArrays = fragments.slice(0, 10).map(f => Array.from(f))
-          debugLog('INFO', 'Fragment arrays created (sample)', { 
-            fragmentCount: fragmentArrays.length,
-            firstFragmentLength: fragmentArrays[0]?.length,
-            totalFragments: fragments.length
-          })
-          
+          // Send all fragments on initialization
           self.postMessage({
             type: 'initialized',
             interactions,
-            fragments: fragmentArrays // Just send first 10 for testing
+            fragments: fragments.map(f => Array.from(f))
           })
           debugLog('INFO', 'Initialized message sent successfully')
           
@@ -524,11 +628,14 @@ self.onmessage = function(e) {
       case 'single-interaction':
         debugLog('DEBUG', 'Single interaction requested')
         performInteraction()
+        // For single interactions, always send full update for simplicity
         self.postMessage({
           type: 'progress',
           interactions,
+          updateType: 'full',
           fragments: fragments.map(f => Array.from(f))
         })
+        changedFragmentIndices.clear()
         break
         
       case 'debug-toggle':

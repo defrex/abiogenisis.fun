@@ -16,9 +16,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Play,
   Pause,
-  SkipForward,
   Bug,
   Circle,
+  Square,
   ArrowLeftIcon,
   ArrowRightIcon,
   IterationCcwIcon,
@@ -33,6 +33,7 @@ import {
 
 export default function Home() {
   const [interactions, setInteractions] = useState<number | null>(null)
+  const [interactionsPerSecond, setInteractionsPerSecond] = useState<number>(0)
   const [fragments, setFragments] = useState<Uint8Array[]>([])
   const [compressionRatio, setCompressionRatio] = useState<Array<[number, number]>>([])
   const [operationsPerInteraction, setOperationsPerInteraction] = useState<Array<[number, number]>>(
@@ -41,6 +42,7 @@ export default function Home() {
   const [playing, setPlaying] = useState(false)
   const [debugLogs, setDebugLogs] = useState<string[]>([])
   const [debugEnabled, setDebugEnabled] = useState<boolean>(false)
+  const [fragmentCount, setFragmentCount] = useState<number>(1024)
   const [workerStatus, setWorkerStatus] = useState<
     'initializing' | 'running' | 'stopped' | 'error'
   >('initializing')
@@ -61,6 +63,7 @@ export default function Home() {
           case 'initialized':
             setWorkerStatus('stopped')
             setInteractions(data.interactions)
+            setInteractionsPerSecond(0)
             setFragments(data.fragments.map((f: number[]) => new Uint8Array(f)))
             break
 
@@ -68,7 +71,22 @@ export default function Home() {
             setWorkerStatus('running')
             setLastHeartbeat(Date.now())
             setInteractions(data.interactions)
-            setFragments(data.fragments.map((f: number[]) => new Uint8Array(f)))
+            setInteractionsPerSecond(data.interactionsPerSecond || 0)
+
+            // Handle delta updates vs full updates
+            if (data.updateType === 'delta' && data.deltaUpdates) {
+              // Apply delta updates efficiently
+              setFragments((prevFragments) => {
+                const newFragments = [...prevFragments]
+                for (const update of data.deltaUpdates) {
+                  newFragments[update.index] = new Uint8Array(update.fragment)
+                }
+                return newFragments
+              })
+            } else {
+              // Full update
+              setFragments(data.fragments.map((f: number[]) => new Uint8Array(f)))
+            }
             break
 
           case 'compression':
@@ -111,8 +129,8 @@ export default function Home() {
         setDebugLogs((prev) => [...prev, `[ERROR] Worker error: ${error.message}`])
       }
 
-      // Initialize the simulation
-      workerRef.current.postMessage({ type: 'initialize' })
+      // Initialize the simulation with fragment count
+      workerRef.current.postMessage({ type: 'initialize', fragmentCount })
     }
 
     return () => {
@@ -120,7 +138,7 @@ export default function Home() {
         workerRef.current.terminate()
       }
     }
-  }, []) // Keep empty to prevent recreation
+  }, [fragmentCount])
 
   // Separate effect for heartbeat monitoring
   useEffect(() => {
@@ -162,10 +180,20 @@ export default function Home() {
     })
   }, [])
 
-  const handleInteractRandom = useCallback(() => {
+  const handleReset = useCallback(() => {
     if (!workerRef.current) return
-    workerRef.current.postMessage({ type: 'single-interaction' })
-  }, [])
+
+    // Stop the simulation if it's running
+    setPlaying(false)
+    workerRef.current.postMessage({ type: 'stop' })
+
+    // Reset all state
+    setCompressionRatio([])
+    setOperationsPerInteraction([])
+
+    // Reinitialize the simulation with fragment count
+    workerRef.current.postMessage({ type: 'initialize', fragmentCount })
+  }, [fragmentCount])
 
   return (
     <main className="h-screen flex">
@@ -173,69 +201,112 @@ export default function Home() {
       <div className="w-80 border-r border-neutral-700 bg-neutral-900 p-6 overflow-y-auto">
         <Stack justify="between" className="h-full flex-grow">
           <Stack gap={6}>
-            {/* Controls and Status */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={(event) => {
-                    event.preventDefault()
-                    handleTogglePlaying()
-                  }}
-                >
-                  {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                </Button>
+            <Stack gap={2} className="pb-6 border-b">
+              {/* Controls and Status */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      handleTogglePlaying()
+                    }}
+                  >
+                    {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                  </Button>
 
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={(event) => {
-                    event.preventDefault()
-                    handleInteractRandom()
-                  }}
-                >
-                  <SkipForward className="h-4 w-4" />
-                </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      handleReset()
+                    }}
+                    title="Stop and reset simulation"
+                  >
+                    <Square className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Circle
+                    className={cn(
+                      'h-3 w-3 fill-current',
+                      workerStatus === 'running' && playing && 'text-green-400',
+                      workerStatus === 'error' && 'text-red-400',
+                      ((workerStatus === 'running' && !playing) ||
+                        (workerStatus === 'stopped' &&
+                          interactions !== null &&
+                          interactions > 0)) &&
+                        'text-orange-400',
+                      workerStatus === 'stopped' &&
+                        (interactions === null || interactions === 0) &&
+                        'text-yellow-400',
+                      workerStatus === 'initializing' && 'text-blue-400',
+                    )}
+                  />
+                  <Text
+                    value={
+                      workerStatus === 'error'
+                        ? 'Error'
+                        : workerStatus === 'initializing'
+                          ? 'Initializing'
+                          : workerStatus === 'running' && playing
+                            ? 'Running'
+                            : interactions !== null && interactions > 0
+                              ? 'Paused'
+                              : 'Stopped'
+                    }
+                    size="sm"
+                  />
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <Circle
-                  className={cn(
-                    'h-3 w-3 fill-current',
-                    workerStatus === 'running' && playing && 'text-green-400',
-                    workerStatus === 'error' && 'text-red-400',
-                    ((workerStatus === 'running' && !playing) ||
-                      (workerStatus === 'stopped' && interactions !== null && interactions > 0)) &&
-                      'text-orange-400',
-                    workerStatus === 'stopped' &&
-                      (interactions === null || interactions === 0) &&
-                      'text-yellow-400',
-                    workerStatus === 'initializing' && 'text-blue-400',
-                  )}
-                />
-                <Text
-                  value={
-                    workerStatus === 'error'
-                      ? 'Error'
-                      : workerStatus === 'initializing'
-                        ? 'Initializing'
-                        : workerStatus === 'running' && playing
-                          ? 'Running'
-                          : interactions !== null && interactions > 0
-                            ? 'Paused'
-                            : 'Stopped'
+              {/* Fragment Count Control */}
+              <div className="flex items-center justify-between">
+                <Text value="Programs" color="light" size="sm" />
+                <input
+                  type="number"
+                  value={fragmentCount}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value)
+                    if (value > 0 && value <= 10000) {
+                      setFragmentCount(value)
+                    }
+                  }}
+                  disabled={
+                    workerStatus === 'running' ||
+                    (workerStatus === 'stopped' && interactions !== null && interactions > 0)
                   }
-                  size="sm"
+                  className={cn(
+                    'w-20 px-2 py-1 text-sm bg-neutral-800 border border-neutral-700 rounded',
+                    'focus:outline-none focus:border-neutral-600',
+                    'disabled:opacity-50 disabled:cursor-not-allowed',
+                  )}
+                  min="1"
+                  max="10000"
                 />
               </div>
-            </div>
+            </Stack>
 
             {/* Statistics */}
             <Stack gap={4}>
               <div className="flex items-center justify-between">
                 <Text value="Interactions" color="light" size="sm" />
                 <Text value={interactions !== null ? formatNumber(interactions) : '0'} size="sm" />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Text value="Speed" color="light" size="sm" />
+                <Text
+                  value={
+                    interactionsPerSecond > 0
+                      ? `${formatNumber(Math.round(interactionsPerSecond))}/s`
+                      : '—'
+                  }
+                  size="sm"
+                />
               </div>
 
               <div className="flex items-center justify-between">
