@@ -1,12 +1,33 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { Inline } from '@/components/ui/inline'
 import { Stack } from '@/components/ui/stack'
 import { Text } from '@/components/ui/text/text'
+import { Tabs } from '@/components/ui/tabs'
 import { VirtualFragmentList } from '@/components/virtual-fragment-list'
+import { CompressionChart } from '@/components/compression-chart'
+import { SimulationDescription } from '@/components/simulation-description'
 import { cn } from '@/lib/utils/cn'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  Play,
+  Pause,
+  SkipForward,
+  Bug,
+  Circle,
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  IterationCcwIcon,
+  MinusIcon,
+  PlusIcon,
+  SquareArrowDownIcon,
+  SquareArrowLeftIcon,
+  SquareArrowRightIcon,
+  SquareArrowUpIcon,
+  WifiZeroIcon,
+} from 'lucide-react'
 
 export default function Home() {
   const [interactions, setInteractions] = useState<number | null>(null)
@@ -66,7 +87,7 @@ export default function Home() {
               setWorkerStatus('error')
             }
             break
-            
+
           case 'test':
             console.log('Received test message from worker:', data.message)
             setDebugLogs((prev) => [...prev, `[TEST] ${data.message}`])
@@ -97,7 +118,7 @@ export default function Home() {
     if (heartbeatRef.current) {
       clearInterval(heartbeatRef.current)
     }
-    
+
     heartbeatRef.current = setInterval(() => {
       const timeSinceLastHeartbeat = Date.now() - lastHeartbeat
       if (timeSinceLastHeartbeat > 10000 && playing) {
@@ -137,81 +158,104 @@ export default function Home() {
     workerRef.current.postMessage({ type: 'single-interaction' })
   }, [])
 
-  const handleToggleDebug = useCallback(() => {
-    if (!workerRef.current) return
-    const newDebugState = !debugEnabled
-    setDebugEnabled(newDebugState)
-    debugEnabledRef.current = newDebugState // Update ref too
-    workerRef.current.postMessage({ type: 'debug-toggle', enabled: newDebugState })
-    if (!newDebugState) {
-      setDebugLogs([]) // Clear logs when disabling debug
-    }
-  }, [debugEnabled])
-
   return (
     <main className="h-screen flex">
       {/* Left Column - Stats and Controls */}
       <div className="w-80 border-r border-neutral-700 bg-neutral-900 p-6 overflow-y-auto">
         <Stack gap={6}>
-          <Stack gap={4}>
-            <Text value="Controls" size="lg" />
-            <Stack gap={2}>
+          {/* Controls and Status */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
               <Button
-                label="Interact Random"
-                onClick={(event) => {
-                  event.preventDefault()
-                  handleInteractRandom()
-                }}
-              />
-              <Button
-                label={playing ? 'Stop' : 'Play'}
+                size="sm"
+                variant="ghost"
                 onClick={(event) => {
                   event.preventDefault()
                   handleTogglePlaying()
                 }}
-              />
+              >
+                {playing ? (
+                  <Pause className="h-4 w-4" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+              </Button>
+              
               <Button
-                label={debugEnabled ? 'Disable Debug' : 'Enable Debug'}
+                size="sm"
+                variant="ghost"
                 onClick={(event) => {
                   event.preventDefault()
-                  handleToggleDebug()
+                  handleInteractRandom()
                 }}
+              >
+                <SkipForward className="h-4 w-4" />
+              </Button>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <Circle 
+                className={cn(
+                  "h-3 w-3 fill-current",
+                  (workerStatus === 'running' && playing) && 'text-green-400',
+                  workerStatus === 'error' && 'text-red-400',
+                  ((workerStatus === 'running' && !playing) || (workerStatus === 'stopped' && interactions !== null && interactions > 0)) && 'text-orange-400',
+                  (workerStatus === 'stopped' && (interactions === null || interactions === 0)) && 'text-yellow-400',
+                  workerStatus === 'initializing' && 'text-blue-400',
+                )}
               />
-            </Stack>
+              <Text 
+                value={
+                  workerStatus === 'error' ? 'Error' : 
+                  workerStatus === 'initializing' ? 'Initializing' :
+                  (workerStatus === 'running' && playing) ? 'Running' :
+                  (interactions !== null && interactions > 0) ? 'Paused' : 'Stopped'
+                } 
+                size="sm" 
+              />
+            </div>
+          </div>
+
+          {/* Statistics */}
+          <Stack gap={2}>
+            <div className="flex items-center justify-between">
+              <Text value="Interactions" color="light" size="sm" />
+              <Text value={interactions?.toLocaleString() ?? '0'} size="sm" />
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <Text value="Compression" color="light" size="sm" />
+              <Text 
+                value={compressionRatio.length > 0 ? 
+                  compressionRatio[compressionRatio.length - 1][1].toFixed(3) : 
+                  '—'
+                } 
+                size="sm" 
+              />
+            </div>
           </Stack>
 
-          <Stack gap={4}>
-            <Text value="Statistics" size="lg" />
-            <Stack gap={3}>
-              <Stack>
-                <Text value="Interactions" color="light" />
-                <Text value={interactions} size="lg" />
-              </Stack>
-              <Stack>
-                <Text value="Worker Status" color="light" />
-                <Text
-                  value={workerStatus}
-                  size="lg"
-                  className={cn(
-                    workerStatus === 'running' && 'text-green-400',
-                    workerStatus === 'error' && 'text-red-400',
-                    workerStatus === 'stopped' && 'text-yellow-400',
-                  )}
-                />
-              </Stack>
-              <Stack>
-                <Text value="Compression Ratio" color="light" />
-                <Stack gap={1}>
-                  {compressionRatio.slice(-5).map(([interactions, ratio]) => (
-                    <Inline key={interactions} gap={2}>
-                      <Text value={interactions} />
-                      <Text value={ratio.toFixed(3)} />
-                    </Inline>
-                  ))}
-                </Stack>
-              </Stack>
-            </Stack>
-          </Stack>
+          {/* Debug Toggle */}
+          <div className="flex items-center justify-between py-1">
+            <div className="flex items-center gap-2">
+              <Bug className="h-4 w-4 text-muted-foreground" />
+              <Text value="Debug" size="sm" color="light" />
+            </div>
+            <Switch
+              checked={debugEnabled}
+              onCheckedChange={setDebugEnabled}
+              onClick={() => {
+                const newDebugState = !debugEnabled
+                if (workerRef.current) {
+                  debugEnabledRef.current = newDebugState
+                  workerRef.current.postMessage({ type: 'debug-toggle', enabled: newDebugState })
+                  if (!newDebugState) {
+                    setDebugLogs([])
+                  }
+                }
+              }}
+            />
+          </div>
 
           {debugEnabled && (
             <Stack gap={4}>
@@ -223,20 +267,97 @@ export default function Home() {
                   </div>
                 ))}
               </div>
-              <Button label="Clear Debug Log" onClick={() => setDebugLogs([])} />
+              <Button size="sm" variant="outline" onClick={() => setDebugLogs([])}>
+                Clear Debug Log
+              </Button>
             </Stack>
           )}
         </Stack>
       </div>
 
-      {/* Right Column - Fragments */}
+      {/* Right Column - Tabbed Interface */}
       <div className="flex-1 bg-neutral-950 flex flex-col">
-        <div className="p-6 border-b border-neutral-700 flex-shrink-0">
-          <Text value="Program Fragments" size="lg" />
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <VirtualFragmentList fragments={fragments} />
-        </div>
+        <Tabs
+          tabs={[
+            {
+              id: 'about',
+              label: 'About',
+              content: <SimulationDescription />,
+            },
+            {
+              id: 'fragments',
+              label: 'Programs',
+              content: (
+                <div className="h-full flex flex-col">
+                  <div className="flex-shrink-0 p-4 border-b border-neutral-700 bg-neutral-900">
+                    <Stack gap={2}>
+                      <Text value="Operation Reference" size="sm" />
+                      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-1 text-xs max-w-[768px]">
+                        <div className="flex items-center gap-1">
+                          <ArrowRightIcon className="h-3 w-3 text-blue-400" />
+                          <span className="text-neutral-400">Buf →</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <ArrowLeftIcon className="h-3 w-3 text-blue-400" />
+                          <span className="text-neutral-400">Buf ←</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <PlusIcon className="h-3 w-3 text-green-400" />
+                          <span className="text-neutral-400">Buf ++</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <MinusIcon className="h-3 w-3 text-red-400" />
+                          <span className="text-neutral-400">Buf --</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <SquareArrowRightIcon className="h-3 w-3 text-purple-400" />
+                          <span className="text-neutral-400">Prog →</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <SquareArrowLeftIcon className="h-3 w-3 text-purple-400" />
+                          <span className="text-neutral-400">Prog ←</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <SquareArrowDownIcon className="h-3 w-3 text-yellow-400" />
+                          <span className="text-neutral-400">Read</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <SquareArrowUpIcon className="h-3 w-3 text-yellow-400" />
+                          <span className="text-neutral-400">Write</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <IterationCcwIcon className="h-3 w-3 text-orange-400" />
+                          <span className="text-neutral-400">Loop [</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <IterationCcwIcon className="h-3 w-3 text-orange-400" />
+                          <span className="text-neutral-400">Loop ]</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <WifiZeroIcon className="h-3 w-3 text-neutral-400" />
+                          <span className="text-neutral-400">No-op</span>
+                        </div>
+                      </div>
+                    </Stack>
+                  </div>
+                  <div className="flex-1 overflow-hidden">
+                    <VirtualFragmentList fragments={fragments} />
+                  </div>
+                </div>
+              ),
+            },
+            {
+              id: 'charts',
+              label: 'Charts',
+              content: (
+                <div className="p-6 h-full">
+                  <CompressionChart data={compressionRatio} className="h-full" />
+                </div>
+              ),
+            },
+          ]}
+          defaultTab="about"
+        />
       </div>
     </main>
   )

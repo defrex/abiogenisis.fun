@@ -19,8 +19,6 @@ type ProgramProps = Readonly<{
   program: Uint8Array
 }>
 
-const iconClassNames = cn('size-4')
-
 const iconMap = {
   [operations.bufferRight]: ArrowRightIcon,
   [operations.bufferLeft]: ArrowLeftIcon,
@@ -34,11 +32,25 @@ const iconMap = {
   [operations.loopEnd]: IterationCcwIcon,
 }
 
+const colorMap = {
+  [operations.bufferRight]: 'text-blue-400',
+  [operations.bufferLeft]: 'text-blue-400',
+  [operations.bufferIncrement]: 'text-green-400',
+  [operations.bufferDecrement]: 'text-red-400',
+  [operations.programRight]: 'text-purple-400',
+  [operations.programLeft]: 'text-purple-400',
+  [operations.programRead]: 'text-yellow-400',
+  [operations.programWrite]: 'text-yellow-400',
+  [operations.loopStart]: 'text-orange-400',
+  [operations.loopEnd]: 'text-orange-400',
+}
+
 export const Program = memo(function Program({ program }: ProgramProps) {
   const icons = useMemo(() => {
     return Array.from(program).map((byte, index) => {
       const IconComponent = iconMap[byte] || WifiZeroIcon
-      return <IconComponent key={index} className={iconClassNames} />
+      const color = colorMap[byte] || 'text-neutral-400'
+      return <IconComponent key={index} className={cn('size-4', color)} />
     })
   }, [program])
 
