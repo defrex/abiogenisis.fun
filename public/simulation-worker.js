@@ -183,6 +183,9 @@ function interact(fragmentA, fragmentB) {
     const duration = Date.now() - startTime
     totalInteractionTime += duration
     
+    // Track operations for OPI calculation
+    totalOperations += opsUsed
+    
     if (duration > 50) { // Log slow interactions
       slowInteractions++
       debugLog('WARN', 'Slow interaction detected', { 
@@ -270,6 +273,10 @@ let lastInteractionTime = Date.now()
 let slowInteractions = 0
 let totalInteractionTime = 0
 
+// OPI tracking state
+let totalOperations = 0
+let opsPerInteractionHistory = []
+
 // Debug logging function
 function debugLog(level, message, data = {}) {
   if (debugMode) {
@@ -295,6 +302,8 @@ function debugLog(level, message, data = {}) {
 function initializeFragments() {
   fragments = Array.from({ length: 1024 }, () => randomFragment())
   interactions = 0
+  totalOperations = 0
+  opsPerInteractionHistory = []
 }
 
 // Perform a single interaction
@@ -375,17 +384,23 @@ async function runSimulation() {
         })
       }
       
-      // Check if we need to calculate compression ratio
+      // Check if we need to calculate compression ratio and OPI
       if (interactions % 512 === 0) {
-        debugLog('INFO', 'Calculating compression', { interactions })
+        debugLog('INFO', 'Calculating compression and OPI', { interactions })
         try {
           const compressionStart = Date.now()
           const compressionResult = await compress(fragments)
           const compressionDuration = Date.now() - compressionStart
           
-          debugLog('INFO', 'Compression completed', { 
+          // Calculate current OPI
+          const currentOPI = interactions > 0 ? totalOperations / interactions : 0
+          opsPerInteractionHistory.push([interactions, currentOPI])
+          
+          debugLog('INFO', 'Compression and OPI completed', { 
             interactions,
             ratio: compressionResult.ratio,
+            currentOPI,
+            totalOperations,
             duration: compressionDuration
           })
           
@@ -393,6 +408,13 @@ async function runSimulation() {
             type: 'compression',
             interactions,
             ...compressionResult
+          })
+          
+          self.postMessage({
+            type: 'opi',
+            interactions,
+            opi: currentOPI,
+            totalOperations
           })
         } catch (compressionError) {
           debugLog('ERROR', 'Compression failed', { 

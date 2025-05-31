@@ -8,8 +8,10 @@ import { Text } from '@/components/ui/text/text'
 import { Tabs } from '@/components/ui/tabs'
 import { VirtualFragmentList } from '@/components/virtual-fragment-list'
 import { CompressionChart } from '@/components/compression-chart'
+import { OpiChart } from '@/components/opi-chart'
 import { SimulationDescription } from '@/components/simulation-description'
 import { cn } from '@/lib/utils/cn'
+import { formatNumber } from '@/lib/utils/format-number'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Play,
@@ -33,6 +35,9 @@ export default function Home() {
   const [interactions, setInteractions] = useState<number | null>(null)
   const [fragments, setFragments] = useState<Uint8Array[]>([])
   const [compressionRatio, setCompressionRatio] = useState<Array<[number, number]>>([])
+  const [operationsPerInteraction, setOperationsPerInteraction] = useState<Array<[number, number]>>(
+    [],
+  )
   const [playing, setPlaying] = useState(false)
   const [debugLogs, setDebugLogs] = useState<string[]>([])
   const [debugEnabled, setDebugEnabled] = useState<boolean>(false)
@@ -68,6 +73,10 @@ export default function Home() {
 
           case 'compression':
             setCompressionRatio((prev) => [...prev, [data.interactions, data.ratio]])
+            break
+
+          case 'opi':
+            setOperationsPerInteraction((prev) => [...prev, [data.interactions, data.opi]])
             break
 
           case 'debug':
@@ -162,116 +171,137 @@ export default function Home() {
     <main className="h-screen flex">
       {/* Left Column - Stats and Controls */}
       <div className="w-80 border-r border-neutral-700 bg-neutral-900 p-6 overflow-y-auto">
-        <Stack gap={6}>
-          {/* Controls and Status */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={(event) => {
-                  event.preventDefault()
-                  handleTogglePlaying()
-                }}
-              >
-                {playing ? (
-                  <Pause className="h-4 w-4" />
-                ) : (
-                  <Play className="h-4 w-4" />
-                )}
-              </Button>
-              
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={(event) => {
-                  event.preventDefault()
-                  handleInteractRandom()
-                }}
-              >
-                <SkipForward className="h-4 w-4" />
-              </Button>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <Circle 
-                className={cn(
-                  "h-3 w-3 fill-current",
-                  (workerStatus === 'running' && playing) && 'text-green-400',
-                  workerStatus === 'error' && 'text-red-400',
-                  ((workerStatus === 'running' && !playing) || (workerStatus === 'stopped' && interactions !== null && interactions > 0)) && 'text-orange-400',
-                  (workerStatus === 'stopped' && (interactions === null || interactions === 0)) && 'text-yellow-400',
-                  workerStatus === 'initializing' && 'text-blue-400',
-                )}
-              />
-              <Text 
-                value={
-                  workerStatus === 'error' ? 'Error' : 
-                  workerStatus === 'initializing' ? 'Initializing' :
-                  (workerStatus === 'running' && playing) ? 'Running' :
-                  (interactions !== null && interactions > 0) ? 'Paused' : 'Stopped'
-                } 
-                size="sm" 
-              />
-            </div>
-          </div>
+        <Stack justify="between" className="h-full flex-grow">
+          <Stack gap={6}>
+            {/* Controls and Status */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    handleTogglePlaying()
+                  }}
+                >
+                  {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                </Button>
 
-          {/* Statistics */}
-          <Stack gap={2}>
-            <div className="flex items-center justify-between">
-              <Text value="Interactions" color="light" size="sm" />
-              <Text value={interactions?.toLocaleString() ?? '0'} size="sm" />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    handleInteractRandom()
+                  }}
+                >
+                  <SkipForward className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Circle
+                  className={cn(
+                    'h-3 w-3 fill-current',
+                    workerStatus === 'running' && playing && 'text-green-400',
+                    workerStatus === 'error' && 'text-red-400',
+                    ((workerStatus === 'running' && !playing) ||
+                      (workerStatus === 'stopped' && interactions !== null && interactions > 0)) &&
+                      'text-orange-400',
+                    workerStatus === 'stopped' &&
+                      (interactions === null || interactions === 0) &&
+                      'text-yellow-400',
+                    workerStatus === 'initializing' && 'text-blue-400',
+                  )}
+                />
+                <Text
+                  value={
+                    workerStatus === 'error'
+                      ? 'Error'
+                      : workerStatus === 'initializing'
+                        ? 'Initializing'
+                        : workerStatus === 'running' && playing
+                          ? 'Running'
+                          : interactions !== null && interactions > 0
+                            ? 'Paused'
+                            : 'Stopped'
+                  }
+                  size="sm"
+                />
+              </div>
             </div>
-            
-            <div className="flex items-center justify-between">
-              <Text value="Compression" color="light" size="sm" />
-              <Text 
-                value={compressionRatio.length > 0 ? 
-                  compressionRatio[compressionRatio.length - 1][1].toFixed(3) : 
-                  '—'
-                } 
-                size="sm" 
+
+            {/* Statistics */}
+            <Stack gap={4}>
+              <div className="flex items-center justify-between">
+                <Text value="Interactions" color="light" size="sm" />
+                <Text value={interactions !== null ? formatNumber(interactions) : '0'} size="sm" />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Text value="Compression" color="light" size="sm" />
+                <Text
+                  value={
+                    compressionRatio.length > 0
+                      ? compressionRatio[compressionRatio.length - 1][1].toFixed(3)
+                      : '—'
+                  }
+                  size="sm"
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Text value="Ops/Interaction" color="light" size="sm" />
+                <Text
+                  value={
+                    operationsPerInteraction.length > 0
+                      ? operationsPerInteraction[operationsPerInteraction.length - 1][1].toFixed(1)
+                      : '—'
+                  }
+                  size="sm"
+                />
+              </div>
+            </Stack>
+          </Stack>
+          <Stack>
+            {debugEnabled && (
+              <Stack gap={4}>
+                <Text value="Debug Log" size="lg" />
+                <div className="bg-neutral-800 rounded p-3 h-40 overflow-y-auto text-xs font-mono">
+                  {debugLogs.slice(-20).map((log, index) => (
+                    <div key={index} className="mb-1 text-neutral-300">
+                      {log}
+                    </div>
+                  ))}
+                </div>
+                <Button size="sm" variant="outline" onClick={() => setDebugLogs([])}>
+                  Clear Debug Log
+                </Button>
+              </Stack>
+            )}
+
+            {/* Debug Toggle */}
+            <div className="flex items-center justify-between py-1">
+              <div className="flex items-center gap-2">
+                <Bug className="h-4 w-4 text-muted-foreground" />
+                <Text value="Debug" size="sm" color="light" />
+              </div>
+              <Switch
+                checked={debugEnabled}
+                onCheckedChange={setDebugEnabled}
+                onClick={() => {
+                  const newDebugState = !debugEnabled
+                  if (workerRef.current) {
+                    debugEnabledRef.current = newDebugState
+                    workerRef.current.postMessage({ type: 'debug-toggle', enabled: newDebugState })
+                    if (!newDebugState) {
+                      setDebugLogs([])
+                    }
+                  }
+                }}
               />
             </div>
           </Stack>
-
-          {/* Debug Toggle */}
-          <div className="flex items-center justify-between py-1">
-            <div className="flex items-center gap-2">
-              <Bug className="h-4 w-4 text-muted-foreground" />
-              <Text value="Debug" size="sm" color="light" />
-            </div>
-            <Switch
-              checked={debugEnabled}
-              onCheckedChange={setDebugEnabled}
-              onClick={() => {
-                const newDebugState = !debugEnabled
-                if (workerRef.current) {
-                  debugEnabledRef.current = newDebugState
-                  workerRef.current.postMessage({ type: 'debug-toggle', enabled: newDebugState })
-                  if (!newDebugState) {
-                    setDebugLogs([])
-                  }
-                }
-              }}
-            />
-          </div>
-
-          {debugEnabled && (
-            <Stack gap={4}>
-              <Text value="Debug Log" size="lg" />
-              <div className="bg-neutral-800 rounded p-3 h-40 overflow-y-auto text-xs font-mono">
-                {debugLogs.slice(-20).map((log, index) => (
-                  <div key={index} className="mb-1 text-neutral-300">
-                    {log}
-                  </div>
-                ))}
-              </div>
-              <Button size="sm" variant="outline" onClick={() => setDebugLogs([])}>
-                Clear Debug Log
-              </Button>
-            </Stack>
-          )}
         </Stack>
       </div>
 
@@ -283,6 +313,22 @@ export default function Home() {
               id: 'about',
               label: 'About',
               content: <SimulationDescription />,
+            },
+            {
+              id: 'charts',
+              label: 'Metrics',
+              content: (
+                <div className="p-6 h-full flex flex-col gap-12">
+                  <div className="flex-1">
+                    <Text value="Compression Ratio" size="lg" />
+                    <CompressionChart data={compressionRatio} className="h-full" />
+                  </div>
+                  <div className="flex-1">
+                    <Text value="Operations Per Interaction" size="lg" />
+                    <OpiChart data={operationsPerInteraction} className="h-full" />
+                  </div>
+                </div>
+              ),
             },
             {
               id: 'fragments',
@@ -343,15 +389,6 @@ export default function Home() {
                   <div className="flex-1 overflow-hidden">
                     <VirtualFragmentList fragments={fragments} />
                   </div>
-                </div>
-              ),
-            },
-            {
-              id: 'charts',
-              label: 'Charts',
-              content: (
-                <div className="p-6 h-full">
-                  <CompressionChart data={compressionRatio} className="h-full" />
                 </div>
               ),
             },

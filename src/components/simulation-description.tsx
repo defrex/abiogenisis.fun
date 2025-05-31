@@ -33,8 +33,7 @@ export function SimulationDescription() {
               Interaction
             </em>
           </a>{' '}
-          by Blaise Agüera y Arcas, Jyrki Alakuijala, James Evans, Ben Laurie, Alexander
-          Mordvintsev, Eyvind Niklasson, Ettore Randazzo, and Luca Versari.
+          by Blaise Agüera y Arcas et al.
         </p>
 
         <h2>How It Works</h2>
@@ -138,6 +137,33 @@ export function SimulationDescription() {
         <p>
           This metric allows us to quantitatively track the emergence of life without requiring
           prior knowledge of what successful replicators might look like.
+        </p>
+
+        <h2>Operations Per Interaction</h2>
+
+        <p>
+          Operations Per Interaction measures the computational activity of the population and
+          serves as a complementary metric to compression ratio.
+        </p>
+
+        <ul>
+          <li>
+            <strong>Random programs are computationally sparse</strong> - most random bytes are
+            non-operations, leading to low computational activity
+          </li>
+          <li>
+            <strong>Working programs execute more operations</strong> - functional replicators tend
+            to perform meaningful computation during their interactions
+          </li>
+          <li>
+            <strong>Higher OPI indicates algorithmic complexity</strong> - as self-replicating
+            programs evolve, they become more computationally active
+          </li>
+        </ul>
+
+        <p>
+          Combined with compression ratio, OPI provides insight into both the <em>structure</em>
+          (compression) and <em>activity</em> (operations) of emerging digital life forms.
         </p>
       </article>
     </div>
