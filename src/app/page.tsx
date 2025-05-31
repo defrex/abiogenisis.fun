@@ -1,146 +1,129 @@
 'use client'
 
-import { Program } from '@/components/program'
+import { VirtualFragmentList } from '@/components/virtual-fragment-list'
 import { Button } from '@/components/ui/button'
 import { Inline } from '@/components/ui/inline'
 import { Inset } from '@/components/ui/inset'
 import { Stack } from '@/components/ui/stack'
 import { Text } from '@/components/ui/text/text'
-import { compress } from '@/lib/compress'
-import { interact } from '@/lib/interact'
-import { randomFragment } from '@/lib/random-fragment'
 import { cn } from '@/lib/utils/cn'
-import { useCallback, useEffect, useState } from 'react'
-import { range } from 'remeda'
-
-let fragments: Uint8Array[] = []
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export default function Home() {
   const [interactions, setInteractions] = useState<number | null>(null)
+  const [fragments, setFragments] = useState<Uint8Array[]>([])
   const [compressionRatio, setCompressionRatio] = useState<Array<[number, number]>>([])
-  const [tab, setTab] = useState('stats')
   const [playing, setPlaying] = useState(false)
+  const workerRef = useRef<Worker | null>(null)
 
+  // Initialize worker and simulation
   useEffect(() => {
-    fragments = range(0, 1024).map(() => randomFragment())
-    setInteractions(0)
+    if (typeof window !== 'undefined') {
+      workerRef.current = new Worker('/simulation-worker.js')
+      
+      workerRef.current.onmessage = (e) => {
+        const { type, ...data } = e.data
+        
+        switch (type) {
+          case 'initialized':
+          case 'progress':
+            setInteractions(data.interactions)
+            setFragments(data.fragments.map((f: number[]) => new Uint8Array(f)))
+            break
+            
+          case 'compression':
+            setCompressionRatio((prev) => [...prev, [data.interactions, data.ratio]])
+            break
+        }
+      }
+      
+      // Initialize the simulation
+      workerRef.current.postMessage({ type: 'initialize' })
+    }
+
+    return () => {
+      if (workerRef.current) {
+        workerRef.current.terminate()
+      }
+    }
   }, [])
 
   const handleTogglePlaying = useCallback(() => {
-    setPlaying((playing) => !playing)
+    if (!workerRef.current) return
+    
+    setPlaying((playing) => {
+      const newPlaying = !playing
+      if (newPlaying) {
+        workerRef.current?.postMessage({ type: 'start' })
+      } else {
+        workerRef.current?.postMessage({ type: 'stop' })
+      }
+      return newPlaying
+    })
   }, [])
 
   const handleInteractRandom = useCallback(() => {
-    const fragmentAIndex = Math.floor(Math.random() * fragments.length)
-    const fragmentBIndex = Math.floor(Math.random() * fragments.length)
-
-    const [newFragmentA, newFragmentB] = interact(
-      fragments[fragmentAIndex],
-      fragments[fragmentBIndex],
-    )
-    fragments[fragmentAIndex] = newFragmentA
-    fragments[fragmentBIndex] = newFragmentB
-
-    setInteractions((interactions) => {
-      return (interactions ?? 0) + 1
-    })
+    if (!workerRef.current) return
+    workerRef.current.postMessage({ type: 'single-interaction' })
   }, [])
 
-  useEffect(() => {
-    async function run() {
-      if (interactions !== null && interactions % 512 === 0) {
-        const { ratio } = await compress(fragments)
-
-        setCompressionRatio((compressionRatio) => [...compressionRatio, [interactions, ratio]])
-      }
-    }
-    run()
-  }, [interactions])
-
-  useEffect(() => {
-    if (!playing) return
-
-    let canceled = false
-
-    requestAnimationFrame(function loop() {
-      if (canceled) return
-      handleInteractRandom()
-      requestAnimationFrame(loop)
-    })
-
-    return () => {
-      canceled = true
-    }
-  }, [handleInteractRandom, playing])
-
   return (
-    <main className="container">
-      <Inset gap={[4, 2]}>
-        <Inline align="top">
-          <Stack gap={4} grow>
-            <Inline>
+    <main className="h-screen flex">
+      {/* Left Column - Stats and Controls */}
+      <div className="w-80 border-r border-neutral-700 bg-neutral-900 p-6 overflow-y-auto">
+        <Stack gap={6}>
+          <Stack gap={4}>
+            <Text value="Controls" size="lg" />
+            <Stack gap={2}>
               <Button
-                variant="ghost"
-                label="Fragments"
-                onClick={() => setTab('fragments')}
-                className={cn({
-                  'bg-neutral-600': tab === 'fragments',
-                })}
+                label="Interact Random"
+                onClick={(event) => {
+                  event.preventDefault()
+                  handleInteractRandom()
+                }}
               />
               <Button
-                variant="ghost"
-                label="Stats"
-                onClick={() => setTab('stats')}
-                className={cn({
-                  'bg-neutral-600': tab === 'stats',
-                })}
+                label={playing ? 'Stop' : 'Play'}
+                onClick={(event) => {
+                  event.preventDefault()
+                  handleTogglePlaying()
+                }}
               />
-            </Inline>
-            {tab === 'fragments' ? (
-              <Stack>
-                {fragments.map((fragment, fragmentIndex) => (
-                  <Program program={fragment} key={fragmentIndex} />
-                ))}
-              </Stack>
-            ) : (
-              <Stack gap={4}>
-                <Stack>
-                  <Text value="Interactions" color="light" />
-                  <Text value={interactions} size="lg" />
-                </Stack>
-                <Stack>
-                  <Text value="Compression Ratio" color="light" />
-                  <Stack>
-                    {compressionRatio.map(([interactions, ratio]) => (
-                      <Inline key={interactions}>
-                        <Text value={interactions} />
-                        <Text value={ratio.toFixed(2)} />
-                      </Inline>
-                    ))}
-                  </Stack>
-                </Stack>
-              </Stack>
-            )}
+            </Stack>
           </Stack>
-          <Stack>
-            <Button
-              label="Interact Random"
-              onClick={(event) => {
-                event.preventDefault()
-                handleInteractRandom()
-              }}
-            />
 
-            <Button
-              label={playing ? 'Stop' : 'Play'}
-              onClick={(event) => {
-                event.preventDefault()
-                handleTogglePlaying()
-              }}
-            />
+          <Stack gap={4}>
+            <Text value="Statistics" size="lg" />
+            <Stack gap={3}>
+              <Stack>
+                <Text value="Interactions" color="light" />
+                <Text value={interactions} size="lg" />
+              </Stack>
+              <Stack>
+                <Text value="Compression Ratio" color="light" />
+                <Stack gap={1}>
+                  {compressionRatio.map(([interactions, ratio]) => (
+                    <Inline key={interactions} gap={2}>
+                      <Text value={interactions} />
+                      <Text value={ratio.toFixed(2)} />
+                    </Inline>
+                  ))}
+                </Stack>
+              </Stack>
+            </Stack>
           </Stack>
-        </Inline>
-      </Inset>
+        </Stack>
+      </div>
+
+      {/* Right Column - Fragments */}
+      <div className="flex-1 bg-neutral-950 flex flex-col">
+        <div className="p-6 border-b border-neutral-700 flex-shrink-0">
+          <Text value="Program Fragments" size="lg" />
+        </div>
+        <div className="flex-1 overflow-hidden">
+          <VirtualFragmentList fragments={fragments} />
+        </div>
+      </div>
     </main>
   )
 }
