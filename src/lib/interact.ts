@@ -25,7 +25,8 @@ export function interact(fragmentA: Uint8Array, fragmentB: Uint8Array): [Uint8Ar
   // console.log('interaction start', fragmentA, fragmentB)
 
   const buffer = new Uint8Array(128)
-  const program = concatUint8Arrays(fragmentA, fragmentB)
+  // Create copies to avoid modifying original fragments
+  const program = concatUint8Arrays(new Uint8Array(fragmentA), new Uint8Array(fragmentB))
 
   if (!matchingLoops(program)) {
     return [fragmentA, fragmentB]
