@@ -16,8 +16,8 @@ export function Inset({ children, className, gap = 2 }: InsetProps) {
       Array.isArray(gap) && gap.length === 4
         ? gap[2]
         : Array.isArray(gap) && gap.length === 2
-        ? gap[0]
-        : gap,
+          ? gap[0]
+          : gap,
     [gap],
   )
   const gapLeft = useMemo(
@@ -25,8 +25,8 @@ export function Inset({ children, className, gap = 2 }: InsetProps) {
       Array.isArray(gap) && gap.length === 4
         ? gap[3]
         : Array.isArray(gap) && gap.length === 2
-        ? gap[1]
-        : gap,
+          ? gap[1]
+          : gap,
     [gap],
   )
   return (

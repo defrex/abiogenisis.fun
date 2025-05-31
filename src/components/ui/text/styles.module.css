@@ -9,13 +9,13 @@ https://seek-oss.github.io/capsize/
 }
 
 .text-sm::before {
-  content: "";
+  content: '';
   margin-bottom: -0.1071em;
   display: table;
 }
 
 .text-sm::after {
-  content: "";
+  content: '';
   margin-top: -0.1071em;
   display: table;
 }
@@ -26,13 +26,13 @@ https://seek-oss.github.io/capsize/
 }
 
 .text-md::before {
-  content: "";
+  content: '';
   margin-bottom: -0.125em;
   display: table;
 }
 
 .text-md::after {
-  content: "";
+  content: '';
   margin-top: -0.125em;
   display: table;
 }
@@ -43,13 +43,13 @@ https://seek-oss.github.io/capsize/
 }
 
 .text-paragraph::before {
-  content: "";
+  content: '';
   margin-bottom: -0.4037em;
   display: table;
 }
 
 .text-paragraph::after {
-  content: "";
+  content: '';
   margin-top: -0.3462em;
   display: table;
 }
@@ -60,13 +60,13 @@ https://seek-oss.github.io/capsize/
 }
 
 .text-lg::before {
-  content: "";
+  content: '';
   margin-bottom: -0.1364em;
   display: table;
 }
 
 .text-lg::after {
-  content: "";
+  content: '';
   margin-top: -0.1364em;
   display: table;
 }
@@ -77,13 +77,13 @@ https://seek-oss.github.io/capsize/
 }
 
 .text-xl::before {
-  content: "";
+  content: '';
   margin-bottom: -0.125em;
   display: table;
 }
 
 .text-xl::after {
-  content: "";
+  content: '';
   margin-top: -0.125em;
   display: table;
 }
@@ -94,13 +94,13 @@ https://seek-oss.github.io/capsize/
 }
 
 .text-xxl::before {
-  content: "";
+  content: '';
   margin-bottom: -0.125em;
   display: table;
 }
 
 .text-xxl::after {
-  content: "";
+  content: '';
   margin-top: -0.125em;
   display: table;
 }
