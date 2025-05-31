@@ -3,7 +3,6 @@
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
-  ExternalLink,
   IterationCcwIcon,
   MinusIcon,
   PlusIcon,

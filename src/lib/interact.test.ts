@@ -181,14 +181,14 @@ describe('Turing Machine interact function', () => {
     expect(modifiedB).toEqual(fragmentB) // fragmentB unchanged
   })
 
-  // Test fragment modification detection - writing to fragmentB  
+  // Test fragment modification detection - writing to fragmentB
   it('should modify fragmentB when program writes to it', () => {
     // Use a fixed-size fragmentA to make calculations easier
     const fragmentA = new Uint8Array(3) // 3 bytes
     fragmentA[0] = operations.bufferIncrement // buffer[0] = 1
-    fragmentA[1] = operations.programLeft    // Move to position 2 (wraps to end of program)
-    fragmentA[2] = operations.programWrite   // Write to fragmentB
-    
+    fragmentA[1] = operations.programLeft // Move to position 2 (wraps to end of program)
+    fragmentA[2] = operations.programWrite // Write to fragmentB
+
     const fragmentB = new Uint8Array([0, 0, 0]) // 3 bytes, total program length = 6
 
     const [modifiedA, modifiedB] = interact(fragmentA, fragmentB)
@@ -246,9 +246,9 @@ describe('Compression function', () => {
   it('should compress identical fragments to ratio < 1.0', async () => {
     // Create array of identical fragments (should compress well)
     const identicalFragments = Array(100).fill(new Uint8Array([1, 2, 3, 4]))
-    
+
     const result = await compress(identicalFragments)
-    
+
     expect(result.ratio).toBeLessThan(1.0)
     expect(result.compressed).toBeLessThan(result.uncompressed)
   })
@@ -256,25 +256,25 @@ describe('Compression function', () => {
   it('should have ratio close to 1.0 for random data', async () => {
     // Random data should not compress well
     const randomFragments = Array.from({ length: 10 }, () => randomFragment())
-    
+
     const result = await compress(randomFragments)
-    
+
     expect(result.ratio).toBeGreaterThan(0.9) // Random data typically compresses poorly
     expect(result.ratio).toBeLessThanOrEqual(1.1) // Allow for slight expansion due to headers
   })
 
   it('should handle empty fragments array', async () => {
     const result = await compress([])
-    
+
     expect(result.uncompressed).toBe(0)
     expect(result.compressed).toBeGreaterThan(0) // Gzip header overhead
   })
 
   it('should handle single fragment', async () => {
     const fragments = [new Uint8Array([1, 2, 3, 4, 5])]
-    
+
     const result = await compress(fragments)
-    
+
     expect(result.uncompressed).toBe(5)
     expect(result.compressed).toBeGreaterThan(0)
   })
@@ -288,16 +288,16 @@ describe('Fragment evolution detection', () => {
     for (let i = 0; i < totalTests; i++) {
       const fragmentA = randomFragment()
       const fragmentB = randomFragment()
-      
+
       const originalA = new Uint8Array(fragmentA)
       const originalB = new Uint8Array(fragmentB)
-      
+
       const [modifiedA, modifiedB] = interact(fragmentA, fragmentB)
-      
+
       // Check if either fragment changed
       const aChanged = !modifiedA.every((val, idx) => val === originalA[idx])
       const bChanged = !modifiedB.every((val, idx) => val === originalB[idx])
-      
+
       if (aChanged || bChanged) {
         changedCount++
       }

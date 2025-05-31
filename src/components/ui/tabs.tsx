@@ -18,7 +18,7 @@ interface TabsProps {
 export function Tabs({ tabs, defaultTab, className }: TabsProps) {
   const [activeTab, setActiveTab] = useState(defaultTab || tabs[0]?.id)
 
-  const activeTabContent = tabs.find(tab => tab.id === activeTab)?.content
+  const activeTabContent = tabs.find((tab) => tab.id === activeTab)?.content
 
   return (
     <div className={cn('flex flex-col h-full', className)}>
@@ -34,7 +34,7 @@ export function Tabs({ tabs, defaultTab, className }: TabsProps) {
               'hover:text-white hover:bg-neutral-800',
               activeTab === tab.id
                 ? 'text-white border-blue-500 bg-neutral-800'
-                : 'text-neutral-400'
+                : 'text-neutral-400',
             )}
           >
             {tab.label}
@@ -43,9 +43,7 @@ export function Tabs({ tabs, defaultTab, className }: TabsProps) {
       </div>
 
       {/* Tab Content */}
-      <div className="flex-1 overflow-hidden">
-        {activeTabContent}
-      </div>
+      <div className="flex-1 overflow-hidden">{activeTabContent}</div>
     </div>
   )
 }

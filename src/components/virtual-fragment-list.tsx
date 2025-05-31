@@ -20,7 +20,7 @@ export function VirtualFragmentList({ fragments }: VirtualFragmentListProps) {
   const startIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - VISIBLE_BUFFER)
   const endIndex = Math.min(
     fragments.length - 1,
-    Math.ceil((scrollTop + containerHeight) / ITEM_HEIGHT) + VISIBLE_BUFFER
+    Math.ceil((scrollTop + containerHeight) / ITEM_HEIGHT) + VISIBLE_BUFFER,
   )
 
   const visibleFragments = fragments.slice(startIndex, endIndex + 1)
@@ -42,14 +42,10 @@ export function VirtualFragmentList({ fragments }: VirtualFragmentListProps) {
   }, [])
 
   return (
-    <div 
-      ref={containerRef}
-      className="h-full w-full overflow-auto p-6"
-      onScroll={handleScroll}
-    >
+    <div ref={containerRef} className="h-full w-full overflow-auto p-6" onScroll={handleScroll}>
       <div style={{ height: totalHeight, position: 'relative' }}>
-        <div 
-          style={{ 
+        <div
+          style={{
             transform: `translateY(${startIndex * ITEM_HEIGHT}px)`,
             position: 'absolute',
             top: 0,
@@ -59,8 +55,8 @@ export function VirtualFragmentList({ fragments }: VirtualFragmentListProps) {
         >
           <Stack gap={2}>
             {visibleFragments.map((fragment, index) => (
-              <div 
-                key={startIndex + index} 
+              <div
+                key={startIndex + index}
                 style={{ height: ITEM_HEIGHT }}
                 className="flex items-center"
               >

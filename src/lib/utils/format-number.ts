@@ -3,10 +3,10 @@
  * @param num The number to format
  * @param precision Number of decimal places to show (default: 1)
  * @returns Formatted string with suffix
- * 
+ *
  * Examples:
  * formatNumber(1234) => "1.2k"
- * formatNumber(1000000) => "1.0M" 
+ * formatNumber(1000000) => "1.0M"
  * formatNumber(999) => "999"
  */
 export function formatNumber(num: number, precision: number = 1): string {

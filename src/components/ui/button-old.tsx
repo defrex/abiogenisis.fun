@@ -3,7 +3,13 @@ import { Spinner } from '@/components/ui/spinner'
 import { Text } from '@/components/ui/text/text'
 import { cn } from '@/lib/utils/cn'
 import { VariantProps, cva } from 'class-variance-authority'
-import { AnchorHTMLAttributes, ButtonHTMLAttributes, DetailedHTMLProps, ElementType, forwardRef } from 'react'
+import {
+  AnchorHTMLAttributes,
+  ButtonHTMLAttributes,
+  DetailedHTMLProps,
+  ElementType,
+  forwardRef,
+} from 'react'
 
 const buttonVariants = cva(
   [

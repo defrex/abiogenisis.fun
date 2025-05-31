@@ -44,7 +44,7 @@ export async function compress(fragments: Array<Uint8Array>): Promise<{
     // Fallback for test environment - simulate compression
     // Use a simple entropy-based estimation
     const uncompressed = concatenatedArray.length
-    
+
     if (uncompressed === 0) {
       return {
         uncompressed: 0,

@@ -7,7 +7,7 @@ interface LegacyButtonProps extends Omit<ButtonProps, 'children'> {
 
 export function LegacyButton({ label, className, ...props }: LegacyButtonProps) {
   return (
-    <Button className={cn("justify-center", className)} {...props}>
+    <Button className={cn('justify-center', className)} {...props}>
       {label}
     </Button>
   )

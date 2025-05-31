@@ -31,7 +31,7 @@ export function OpiChart({ data, className }: OpiChartProps) {
         left: '3%',
         right: '4%',
         bottom: '3%',
-        containLabel: true
+        containLabel: true,
       },
       xAxis: {
         type: 'value',
@@ -40,15 +40,15 @@ export function OpiChart({ data, className }: OpiChartProps) {
         nameGap: 30,
         axisLine: {
           lineStyle: {
-            color: '#525252'
-          }
+            color: '#525252',
+          },
         },
         axisLabel: {
-          color: '#a3a3a3'
+          color: '#a3a3a3',
         },
         nameTextStyle: {
-          color: '#a3a3a3'
-        }
+          color: '#a3a3a3',
+        },
       },
       yAxis: {
         type: 'value',
@@ -58,16 +58,16 @@ export function OpiChart({ data, className }: OpiChartProps) {
         min: 0,
         axisLine: {
           lineStyle: {
-            color: '#525252'
-          }
+            color: '#525252',
+          },
         },
         axisLabel: {
           color: '#a3a3a3',
-          formatter: (value: number) => value.toFixed(1)
+          formatter: (value: number) => value.toFixed(1),
         },
         nameTextStyle: {
-          color: '#a3a3a3'
-        }
+          color: '#a3a3a3',
+        },
       },
       series: [
         {
@@ -76,22 +76,22 @@ export function OpiChart({ data, className }: OpiChartProps) {
           data: chartData,
           lineStyle: {
             color: '#10b981',
-            width: 2
+            width: 2,
           },
           itemStyle: {
-            color: '#10b981'
+            color: '#10b981',
           },
           symbol: 'circle',
           symbolSize: 4,
-          smooth: true
-        }
+          smooth: true,
+        },
       ],
       tooltip: {
         trigger: 'axis',
         backgroundColor: '#171717',
         borderColor: '#404040',
         textStyle: {
-          color: '#e5e5e5'
+          color: '#e5e5e5',
         },
         formatter: (params: any) => {
           if (Array.isArray(params) && params.length > 0) {
@@ -99,8 +99,8 @@ export function OpiChart({ data, className }: OpiChartProps) {
             return `Interactions: ${point.data[0]}<br/>Ops/Interaction: ${point.data[1].toFixed(1)}`
           }
           return ''
-        }
-      }
+        },
+      },
     }
 
     chart.setOption(option)
@@ -126,11 +126,5 @@ export function OpiChart({ data, className }: OpiChartProps) {
     }
   }, [])
 
-  return (
-    <div 
-      ref={chartRef} 
-      className={className}
-      style={{ width: '100%', height: '100%' }}
-    />
-  )
+  return <div ref={chartRef} className={className} style={{ width: '100%', height: '100%' }} />
 }
