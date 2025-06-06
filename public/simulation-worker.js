@@ -236,6 +236,15 @@ let interactions = 0
 let isRunning = false
 let shouldStop = false
 
+// Worker pool management
+let workerPool = []
+let workerPoolSize = 4 // Default to 4 workers
+let pendingBatches = new Map() // Track batches being processed
+let batchIdCounter = 0
+
+// Mutation rate (default 0.024% as per paper)
+let mutationRate = 0.00024 // 0.024%
+
 // Delta tracking for efficient updates
 let changedFragmentIndices = new Set()
 let lastFullUpdate = 0
@@ -266,6 +275,10 @@ let lastInteractionCountTime = Date.now()
 let totalOperations = 0
 let opsPerInteractionHistory = []
 
+// Epoch tracking
+let currentEpoch = 0
+let epochPairs = []
+
 // Debug logging function
 function debugLog(level, message, data = {}) {
   if (debugMode) {
@@ -287,9 +300,40 @@ function debugLog(level, message, data = {}) {
   }
 }
 
+// Initialize worker pool
+function initializeWorkerPool() {
+  // Terminate existing workers
+  for (const worker of workerPool) {
+    worker.terminate()
+  }
+  workerPool = []
+  pendingBatches.clear()
+  
+  // Create new workers
+  for (let i = 0; i < workerPoolSize; i++) {
+    const worker = new Worker('/interaction-worker.js')
+    
+    worker.onmessage = (e) => {
+      if (e.data.type === 'batch-complete') {
+        handleBatchComplete(e.data)
+      }
+    }
+    
+    worker.onerror = (error) => {
+      debugLog('ERROR', `Worker ${i} error:`, { error: error.message })
+    }
+    
+    workerPool.push(worker)
+  }
+  
+  debugLog('INFO', 'Worker pool initialized', { poolSize: workerPoolSize })
+}
+
 // Initialize fragments
 function initializeFragments(count = 1024) {
-  fragments = Array.from({ length: count }, () => randomFragment())
+  // Ensure even number of fragments for pairing
+  const adjustedCount = count % 2 === 0 ? count : count + 1
+  fragments = Array.from({ length: adjustedCount }, () => randomFragment())
   interactions = 0
   totalOperations = 0
   opsPerInteractionHistory = []
@@ -301,73 +345,269 @@ function initializeFragments(count = 1024) {
   compressionCache.clear()
   lastCompressionHash = null
   compressionInProgress = false
+  currentEpoch = 0
+  epochPairs = []
+  
+  // Initialize worker pool when fragments are initialized
+  initializeWorkerPool()
 }
 
-// Perform a single interaction
-function performInteraction() {
-  try {
-    const fragmentAIndex = Math.floor(Math.random() * fragments.length)
-    const fragmentBIndex = Math.floor(Math.random() * fragments.length)
+// Fisher-Yates shuffle algorithm
+function shuffleArray(array) {
+  const shuffled = [...array]
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
+  return shuffled
+}
 
-    const originalA = fragments[fragmentAIndex]
-    const originalB = fragments[fragmentBIndex]
-
-    const [newFragmentA, newFragmentB] = interact(originalA, originalB)
-    
-    // Check if fragments actually changed
-    let aChanged = false
-    for (let i = 0; i < 64; i++) {
-      if (newFragmentA[i] !== originalA[i]) {
-        aChanged = true
-        break
+// Apply mutations to fragments based on mutation rate
+function applyMutations() {
+  if (mutationRate === 0) return
+  
+  let mutationCount = 0
+  const totalBytes = fragments.length * 64
+  const expectedMutations = totalBytes * mutationRate
+  
+  // Apply mutations based on probability
+  for (let i = 0; i < fragments.length; i++) {
+    const fragment = fragments[i]
+    for (let j = 0; j < fragment.length; j++) {
+      if (Math.random() < mutationRate) {
+        // Mutate to a random byte value
+        fragment[j] = Math.floor(Math.random() * 256)
+        changedFragmentIndices.add(i)
+        mutationCount++
       }
     }
-    let bChanged = false
-    for (let i = 0; i < 64; i++) {
-      if (newFragmentB[i] !== originalB[i]) {
-        bChanged = true
-        break
-      }
-    }
+  }
+  
+  if (mutationCount > 0) {
+    debugLog('DEBUG', 'Applied mutations', { 
+      mutationCount, 
+      expectedMutations: expectedMutations.toFixed(2),
+      mutationRate 
+    })
+  }
+}
+
+// Handle batch completion from worker
+function handleBatchComplete(data) {
+  const { id, results, totalOps, errorCount } = data
+  
+  const batchInfo = pendingBatches.get(id)
+  if (!batchInfo) {
+    debugLog('WARN', 'Received completion for unknown batch', { id })
+    return
+  }
+  
+  // Apply results to fragments
+  for (const result of results) {
+    fragments[result.indexA] = new Uint8Array(result.fragmentA)
+    fragments[result.indexB] = new Uint8Array(result.fragmentB)
     
-    // Track changed fragments for delta updates
-    if (aChanged) {
-      changedFragmentIndices.add(fragmentAIndex)
+    // Track changed fragments
+    changedFragmentIndices.add(result.indexA)
+    changedFragmentIndices.add(result.indexB)
+  }
+  
+  // Update statistics
+  interactions += results.length
+  totalOperations += totalOps
+  
+  // Remove from pending
+  pendingBatches.delete(id)
+  
+  debugLog('DEBUG', 'Batch completed', { 
+    batchId: id, 
+    interactions: results.length,
+    totalOps,
+    errorCount,
+    remainingBatches: pendingBatches.size 
+  })
+}
+
+// Create random pairs for a new epoch
+function createEpochPairs() {
+  // Create array of indices
+  const indices = Array.from({ length: fragments.length }, (_, i) => i)
+  
+  // Shuffle the indices
+  const shuffled = shuffleArray(indices)
+  
+  // Create pairs from shuffled indices
+  epochPairs = []
+  for (let i = 0; i < shuffled.length; i += 2) {
+    epochPairs.push([shuffled[i], shuffled[i + 1]])
+  }
+  
+  currentEpoch++
+  debugLog('INFO', 'New epoch started', { 
+    epoch: currentEpoch, 
+    pairCount: epochPairs.length,
+    fragmentCount: fragments.length 
+  })
+}
+
+// Process epoch in parallel batches
+async function processEpochParallel() {
+  // If we've exhausted all pairs, start a new epoch
+  if (epochPairs.length === 0) {
+    createEpochPairs()
+  }
+  
+  // Calculate batch size per worker
+  const totalPairs = epochPairs.length
+  const batchSize = Math.ceil(totalPairs / workerPoolSize)
+  
+  // Distribute pairs to workers
+  const batches = []
+  for (let i = 0; i < workerPoolSize && epochPairs.length > 0; i++) {
+    const batch = epochPairs.splice(0, Math.min(batchSize, epochPairs.length))
+    if (batch.length > 0) {
+      batches.push({ workerId: i, pairs: batch })
     }
-    if (bChanged) {
-      changedFragmentIndices.add(fragmentBIndex)
-    }
+  }
+  
+  debugLog('DEBUG', 'Distributing epoch to workers', {
+    epoch: currentEpoch,
+    totalPairs,
+    batchCount: batches.length,
+    batchSize,
+    workerPoolSize
+  })
+  
+  // Send batches to workers
+  for (const { workerId, pairs } of batches) {
+    const batchId = batchIdCounter++
     
-    // Only log fragment evolution occasionally to reduce spam
-    if ((aChanged || bChanged) && interactions % 100 === 0) {
-      debugLog('DEBUG', 'Fragment evolution detected', { 
-        interactions, 
-        fragmentAIndex, 
-        fragmentBIndex,
-        aChanged,
-        bChanged,
-        totalChangedFragments: changedFragmentIndices.size
+    pendingBatches.set(batchId, {
+      workerId,
+      pairCount: pairs.length,
+      startTime: Date.now()
+    })
+    
+    // Convert fragments to regular arrays for transfer
+    const fragmentsArray = fragments.map(f => Array.from(f))
+    
+    workerPool[workerId].postMessage({
+      type: 'process-batch',
+      id: batchId,
+      pairs,
+      fragments: fragmentsArray
+    })
+  }
+  
+  // Wait for all batches to complete
+  while (pendingBatches.size > 0) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  
+  // Apply mutations after all interactions complete
+  applyMutations()
+  
+  // Log epoch completion and calculate metrics if epoch is done
+  if (epochPairs.length === 0) {
+    if (debugMode) {
+      debugLog('INFO', 'Epoch completed', { 
+        epoch: currentEpoch,
+        interactions,
+        changedFragments: changedFragmentIndices.size
       })
     }
     
-    fragments[fragmentAIndex] = newFragmentA
-    fragments[fragmentBIndex] = newFragmentB
-    interactions++
-    lastInteractionTime = Date.now()
+    // Calculate OPI after each epoch
+    const currentOPI = interactions > 0 ? totalOperations / interactions : 0
+    opsPerInteractionHistory.push([interactions, currentOPI])
     
-  } catch (error) {
-    errorCount++
-    debugLog('ERROR', 'performInteraction error', { 
-      error: error.message,
+    self.postMessage({
+      type: 'opi',
       interactions,
-      errorCount
+      opi: currentOPI,
+      totalOperations
     })
+    
+    debugLog('INFO', 'OPI calculated at epoch end', { 
+      epoch: currentEpoch,
+      interactions,
+      currentOPI,
+      totalOperations
+    })
+    
+    // Trigger compression calculation after each epoch
+    if (!compressionInProgress) {
+      compressionInProgress = true
+      
+      // Calculate compression in the background
+      setTimeout(async () => {
+        try {
+          const fragmentsHash = hashFragments(fragments)
+          
+          // Check cache first
+          if (compressionCache.has(fragmentsHash)) {
+            const cachedResult = compressionCache.get(fragmentsHash)
+            debugLog('INFO', 'Using cached compression result', { 
+              epoch: currentEpoch,
+              interactions,
+              ratio: cachedResult.ratio,
+              cacheSize: compressionCache.size
+            })
+            
+            self.postMessage({
+              type: 'compression',
+              interactions,
+              ...cachedResult,
+              cached: true
+            })
+          } else {
+            // Perform actual compression
+            const compressionStart = Date.now()
+            const compressionResult = await compress(fragments)
+            const compressionDuration = Date.now() - compressionStart
+            
+            // Cache the result
+            compressionCache.set(fragmentsHash, compressionResult)
+            
+            // Limit cache size
+            if (compressionCache.size > COMPRESSION_CACHE_SIZE) {
+              const firstKey = compressionCache.keys().next().value
+              compressionCache.delete(firstKey)
+            }
+            
+            debugLog('INFO', 'Compression completed at epoch end', { 
+              epoch: currentEpoch,
+              interactions,
+              ratio: compressionResult.ratio,
+              duration: compressionDuration,
+              sampled: compressionResult.sampled,
+              sampleSize: compressionResult.sampleSize
+            })
+            
+            self.postMessage({
+              type: 'compression',
+              interactions,
+              ...compressionResult
+            })
+          }
+          
+          lastCompressionHash = fragmentsHash
+        } catch (compressionError) {
+          debugLog('ERROR', 'Compression failed', { 
+            error: compressionError.message,
+            interactions
+          })
+        } finally {
+          compressionInProgress = false
+        }
+      }, 0) // Run in next tick to avoid blocking
+    }
   }
 }
 
 // Main simulation loop
 async function runSimulation() {
-  debugLog('INFO', 'Starting simulation', { fragmentCount: fragments.length })
+  debugLog('INFO', 'Starting simulation', { fragmentCount: fragments.length, workerPoolSize })
   isRunning = true
   shouldStop = false
   let loopCount = 0
@@ -377,11 +617,8 @@ async function runSimulation() {
       loopCount++
       const loopStartTime = Date.now()
       
-      // Perform batch of interactions
-      const batchSize = 100
-      for (let i = 0; i < batchSize && !shouldStop; i++) {
-        performInteraction()
-      }
+      // Process epoch in parallel
+      await processEpochParallel()
       
       // Calculate interactions per second
       const currentTime = Date.now()
@@ -405,6 +642,7 @@ async function runSimulation() {
             interactions,
             interactionsPerSecond,
             updateType: 'full',
+            currentEpoch,
             fragments: fragments.map(f => Array.from(f)) // Convert to regular arrays for transfer
           })
           lastFullUpdate = interactions
@@ -428,6 +666,7 @@ async function runSimulation() {
             interactions,
             interactionsPerSecond,
             updateType: 'delta',
+            currentEpoch,
             deltaUpdates
           })
           
@@ -451,91 +690,6 @@ async function runSimulation() {
         })
       }
       
-      // Check if we need to calculate OPI (moved out of compression check)
-      if (interactions % 512 === 0) {
-        // Calculate current OPI immediately (not blocked by compression)
-        const currentOPI = interactions > 0 ? totalOperations / interactions : 0
-        opsPerInteractionHistory.push([interactions, currentOPI])
-        
-        self.postMessage({
-          type: 'opi',
-          interactions,
-          opi: currentOPI,
-          totalOperations
-        })
-        
-        debugLog('INFO', 'OPI calculated', { 
-          interactions,
-          currentOPI,
-          totalOperations
-        })
-      }
-      
-      // Trigger compression calculation asynchronously (non-blocking)
-      if (interactions % 512 === 0 && !compressionInProgress) {
-        compressionInProgress = true
-        
-        // Calculate compression in the background
-        setTimeout(async () => {
-          try {
-            const fragmentsHash = hashFragments(fragments)
-            
-            // Check cache first
-            if (compressionCache.has(fragmentsHash)) {
-              const cachedResult = compressionCache.get(fragmentsHash)
-              debugLog('INFO', 'Using cached compression result', { 
-                interactions,
-                ratio: cachedResult.ratio,
-                cacheSize: compressionCache.size
-              })
-              
-              self.postMessage({
-                type: 'compression',
-                interactions,
-                ...cachedResult,
-                cached: true
-              })
-            } else {
-              // Perform actual compression
-              const compressionStart = Date.now()
-              const compressionResult = await compress(fragments)
-              const compressionDuration = Date.now() - compressionStart
-              
-              // Cache the result
-              compressionCache.set(fragmentsHash, compressionResult)
-              
-              // Limit cache size
-              if (compressionCache.size > COMPRESSION_CACHE_SIZE) {
-                const firstKey = compressionCache.keys().next().value
-                compressionCache.delete(firstKey)
-              }
-              
-              debugLog('INFO', 'Compression completed', { 
-                interactions,
-                ratio: compressionResult.ratio,
-                duration: compressionDuration,
-                sampled: compressionResult.sampled,
-                sampleSize: compressionResult.sampleSize
-              })
-              
-              self.postMessage({
-                type: 'compression',
-                interactions,
-                ...compressionResult
-              })
-            }
-            
-            lastCompressionHash = fragmentsHash
-          } catch (compressionError) {
-            debugLog('ERROR', 'Compression failed', { 
-              error: compressionError.message,
-              interactions
-            })
-          } finally {
-            compressionInProgress = false
-          }
-        }, 0) // Run in next tick to avoid blocking
-      }
       
       // Monitor loop performance
       const loopDuration = Date.now() - loopStartTime
@@ -592,14 +746,26 @@ self.onmessage = function(e) {
           self.postMessage({ type: 'test', message: 'Worker is alive' })
           
           const fragmentCount = data.fragmentCount || 1024
+          workerPoolSize = data.workerPoolSize || 4
+          mutationRate = data.mutationRate !== undefined ? data.mutationRate : 0.00024
+          
           initializeFragments(fragmentCount)
-          debugLog('INFO', 'Fragments initialized', { count: fragments.length, requested: fragmentCount })
+          debugLog('INFO', 'Fragments initialized', { 
+            count: fragments.length, 
+            requested: fragmentCount,
+            workerPoolSize,
+            mutationRate 
+          })
+          
+          // Initialize first epoch
+          createEpochPairs()
           
           // Send all fragments on initialization
           self.postMessage({
             type: 'initialized',
             interactions,
-            fragments: fragments.map(f => Array.from(f))
+            fragments: fragments.map(f => Array.from(f)),
+            workerPoolSize
           })
           debugLog('INFO', 'Initialized message sent successfully')
           
@@ -627,12 +793,54 @@ self.onmessage = function(e) {
         
       case 'single-interaction':
         debugLog('DEBUG', 'Single interaction requested')
-        performInteraction()
+        // For single interaction, create a small batch if needed
+        if (epochPairs.length === 0) {
+          createEpochPairs()
+        }
+        
+        // Take one pair and process it
+        const pair = epochPairs.shift()
+        if (pair) {
+          const [indexA, indexB] = pair
+          const result = interact(fragments[indexA], fragments[indexB])
+          
+          fragments[indexA] = result[0]
+          fragments[indexB] = result[1]
+          changedFragmentIndices.add(indexA)
+          changedFragmentIndices.add(indexB)
+          interactions++
+          
+          // Track operations
+          const fragmentA = fragments[indexA]
+          const fragmentB = fragments[indexB]
+          const combined = new Uint8Array(128)
+          combined.set(fragmentA, 0)
+          combined.set(fragmentB, 64)
+          
+          let opsUsed = 0
+          for (let i = 0; i < combined.length; i++) {
+            if (operationSet.has(combined[i])) {
+              opsUsed++
+            }
+          }
+          totalOperations += opsUsed
+        }
+        
+        // Apply mutations for single interaction (scaled down)
+        if (mutationRate > 0 && Math.random() < mutationRate * 128) {
+          // Apply a single mutation somewhere
+          const fragmentIndex = Math.floor(Math.random() * fragments.length)
+          const byteIndex = Math.floor(Math.random() * 64)
+          fragments[fragmentIndex][byteIndex] = Math.floor(Math.random() * 256)
+          changedFragmentIndices.add(fragmentIndex)
+        }
+        
         // For single interactions, always send full update for simplicity
         self.postMessage({
           type: 'progress',
           interactions,
           updateType: 'full',
+          currentEpoch,
           fragments: fragments.map(f => Array.from(f))
         })
         changedFragmentIndices.clear()
