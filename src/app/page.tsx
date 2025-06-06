@@ -499,9 +499,9 @@ export default function Home() {
               href="https://defrex.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="pt-4 text-center text-xs text-neutral-500 hover:underline"
+              className="pt-4 text-center hover:underline"
             >
-              Made with ♥︎ by Aron Jones
+              <Text value="Made with ♥︎ by Aron Jones" size="sm" color="light" />
             </a>
             {/* Debug Toggle */}
             <div className="flex items-center justify-between py-1">
