@@ -55,7 +55,8 @@ export async function compress(fragments: Array<Uint8Array>): Promise<{
 
     // Calculate basic entropy to estimate compressibility
     const frequencies = new Map<number, number>()
-    for (const byte of concatenatedArray) {
+    for (let i = 0; i < concatenatedArray.length; i++) {
+      const byte = concatenatedArray[i]
       frequencies.set(byte, (frequencies.get(byte) || 0) + 1)
     }
 
