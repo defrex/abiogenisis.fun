@@ -56,7 +56,7 @@ export function SimulationDescription({ fragmentCount = 1024 }: SimulationDescri
           </li>
           <li>
             The key feature: programs can modify themselves during execution through the
-            &quotProgram Write&quot operation, enabling one fragment to edit the other.
+            &quot;Program Write&quot; operation, enabling one fragment to edit the other.
           </li>
           <li>
             Execution is capped at 2,048 operations to prevent infinite loops. Only programs with
