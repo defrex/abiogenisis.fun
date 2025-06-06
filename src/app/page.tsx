@@ -516,6 +516,14 @@ export default function Home() {
                 }}
               />
             </div>
+            <a
+              href="https://defrex.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="pt-4 text-center text-xs text-neutral-500 hover:underline"
+            >
+              Made with ♥︎ by Aron Jones
+            </a>
           </Stack>
         </Stack>
       </div>
