@@ -13,11 +13,15 @@ import {
   WifiZeroIcon,
 } from 'lucide-react'
 
-export function SimulationDescription() {
+interface SimulationDescriptionProps {
+  fragmentCount?: number
+}
+
+export function SimulationDescription({ fragmentCount = 1024 }: SimulationDescriptionProps) {
   return (
     <div className="p-6 h-full overflow-y-auto">
       <article className="prose prose-invert prose-neutral max-w-[768px]">
-        <h1>Abiogenisis Simulation</h1>
+        <h1>Abiogenesis Simulation</h1>
 
         <p className="lead">
           This simulation explores how self-replicating programs can emerge spontaneously from
@@ -38,19 +42,33 @@ export function SimulationDescription() {
         <h2>How It Works</h2>
 
         <ul>
-          <li>1,024 random, 64-byte turing machine programs are initialized.</li>
-          <li>In each iteration, two programs are randomly selected to interact.</li>
-          <li>Interactions occur by concatenating the programs and executing them together.</li>
           <li>
-            Programs can modify themselves during execution - since the instruction tape and data
-            tape are the same buffer.
+            {fragmentCount.toLocaleString()} random, 64-byte programs are initialized, each byte
+            ranging from 0-255.
           </li>
           <li>
-            After execution, both programs are updated with their potentially modified versions.
+            Programs are organized into epochs, ensuring each program interacts exactly once per
+            epoch with a randomly selected partner. Metrics are calculated at the end of each epoch.
           </li>
           <li>
-            Over time, programs that can replicate themselves become more prevalent in the
-            population.
+            Interactions occur by concatenating two 64-byte programs into a 128-byte program that
+            executes on a Turing machine with a 128-byte buffer (initialized to zeros).
+          </li>
+          <li>
+            The key feature: programs can modify themselves during execution through the
+            &quotProgram Write&quot operation, enabling one fragment to edit the other.
+          </li>
+          <li>
+            Execution is capped at 2,048 operations to prevent infinite loops. Only programs with
+            matching loop brackets execute (safety check).
+          </li>
+          <li>
+            After execution, the 128-byte program is split back into two 64-byte fragments,
+            replacing the originals.
+          </li>
+          <li>
+            Over time, programs that successfully replicate parts of themselves spread through the
+            population, causing measurable changes in compression ratio and computational activity.
           </li>
         </ul>
 
@@ -97,12 +115,14 @@ export function SimulationDescription() {
           </div>
           <div className="flex items-center gap-3">
             <IterationCcwIcon className="h-4 w-4 text-orange-400" />
-            <span className="text-neutral-300">Loop Start - Begin loop if buffer value ≠ 0</span>
+            <span className="text-neutral-300">
+              Loop Start - Skip to matching end if buffer value = 0
+            </span>
           </div>
           <div className="flex items-center gap-3">
             <IterationCcwIcon className="h-4 w-4 text-orange-400" />
             <span className="text-neutral-300">
-              Loop End - Return to loop start if buffer value ≠ 0
+              Loop End - Jump back to matching start if buffer value ≠ 0
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -111,58 +131,151 @@ export function SimulationDescription() {
           </div>
         </div>
 
-        <h2>Why Compression</h2>
+        <h2>Key Metrics</h2>
 
         <p>
-          The compression ratio serves as a key indicator of emerging life-like behavior because it
-          captures the transition from randomness to structure:
+          There are two key indicators we can use to measure the emergence of life-like behavior.
+        </p>
+
+        <h3>Compression Ratio</h3>
+
+        <p>
+          The compression ratio (using gzip) serves as a key indicator of emerging life-like
+          behavior because it captures the transition from randomness to structure. Measured after
+          each epoch completes.
         </p>
 
         <ul>
           <li>
-            <strong>Random programs compress poorly</strong> - truly random byte sequences have high
-            entropy and resist compression
+            <strong>Initial state (~1.0 ratio)</strong> - Random programs have high entropy and
+            compress poorly
           </li>
           <li>
-            <strong>Self-replicators create patterns</strong> - successful replicators spread copies
-            of themselves throughout the population
+            <strong>Pattern emergence (dropping ratio)</strong> - Successful self-replicators begin
+            spreading copies of themselves
           </li>
           <li>
-            <strong>Lower compression ratios indicate organization</strong> - as programs multiply,
-            the overall dataset becomes more compressible
+            <strong>Population takeover (low ratio)</strong> - The population becomes dominated by
+            one or more replicator species, creating highly compressible patterns
           </li>
         </ul>
 
         <p>
-          This metric allows us to quantitatively track the emergence of life without requiring
-          prior knowledge of what successful replicators might look like.
+          This metric elegantly tracks the emergence of life without requiring prior knowledge of
+          what successful replicators might look like.
         </p>
 
-        <h2>Operations Per Interaction</h2>
+        <h3>Operations Per Interaction (OPI)</h3>
 
         <p>
-          Operations Per Interaction measures the computational activity of the population and
-          serves as a complementary metric to compression ratio.
+          OPI measures the average number of valid operations (1-10) executed per interaction and
+          serves as a complementary metric to compression ratio. Also measured after each epoch
+          completes.
         </p>
 
         <ul>
           <li>
-            <strong>Random programs are computationally sparse</strong> - most random bytes are
-            non-operations, leading to low computational activity
+            <strong>Low initial OPI</strong> - Random programs mostly contain non-operation bytes
+            (only 10 out of 256 possible values are operations)
           </li>
           <li>
-            <strong>Working programs execute more operations</strong> - functional replicators tend
-            to perform meaningful computation during their interactions
+            <strong>Rising OPI</strong> - Functional replicators contain more valid operations to
+            perform their self-copying behavior
           </li>
           <li>
-            <strong>Higher OPI indicates algorithmic complexity</strong> - as self-replicating
-            programs evolve, they become more computationally active
+            <strong>Evolutionary dynamics</strong> - Different replicator species may have different
+            OPI signatures, and more efficient replicators can outcompete others
           </li>
         </ul>
 
         <p>
           Combined with compression ratio, OPI provides insight into both the <em>structure</em>
-          (compression) and <em>activity</em> (operations) of emerging digital life forms.
+          (compression) and <em>function</em> (computational activity) of emerging digital life
+          forms. The population may cycle through different dominant patterns as evolution proceeds.
+        </p>
+
+        <h2>Settings</h2>
+
+        <h3>Mutation Rate</h3>
+
+        <p>
+          The mutation rate determines the probability of random changes to program bytes during the
+          simulation. This background noise can accelerate the emergence of self-replicators.
+        </p>
+
+        <ul>
+          <li>
+            <strong>0% (None)</strong> - Pure self-modification only. Self-replicators still emerge
+            but may take longer
+          </li>
+          <li>
+            <strong>0.024% (Default)</strong> - The rate used in the original paper, provides a good
+            balance
+          </li>
+          <li>
+            <strong>Higher rates</strong> - Speed up emergence but may prevent stable replicators
+            from dominating if too high
+          </li>
+        </ul>
+
+        <p>
+          The paper shows that self-replicators arise primarily through self-modification, not
+          mutations. Even with zero mutation rate, about 40% of runs produce self-replicators within
+          16,000 epochs.
+        </p>
+
+        <h3>Population Size</h3>
+
+        <p>
+          The population size determines how many programs participate in the simulation. This
+          setting significantly impacts the dynamics of evolution:
+        </p>
+
+        <ul>
+          <li>
+            <strong>Smaller populations (64-256)</strong> - Faster takeover by successful
+            replicators, but less diversity and potentially less interesting dynamics
+          </li>
+          <li>
+            <strong>Default size (1,024)</strong> - Good balance between computational efficiency
+            and evolutionary complexity
+          </li>
+          <li>
+            <strong>Larger populations (4,096+)</strong> - More diverse evolutionary dynamics,
+            multiple species can coexist, but requires more computation per epoch
+          </li>
+        </ul>
+
+        <p>
+          Use the slider to select powers of 2 for optimal performance. Each epoch will have
+          population/2 interactions.
+        </p>
+
+        <h3>Worker Pool Size</h3>
+
+        <p>
+          The worker pool determines how many parallel threads process interactions. This directly
+          affects simulation speed:
+        </p>
+
+        <ul>
+          <li>
+            <strong>1 worker</strong> - Sequential processing, useful for debugging or single-core
+            systems
+          </li>
+          <li>
+            <strong>2-4 workers</strong> - Good for most modern laptops, balances speed with system
+            responsiveness
+          </li>
+          <li>
+            <strong>8-16 workers</strong> - Maximum performance on high-end desktop CPUs with many
+            cores
+          </li>
+        </ul>
+
+        <p>
+          Set this to match your CPU core count for best results. More workers than CPU cores may
+          actually reduce performance due to context switching.
         </p>
       </article>
     </div>

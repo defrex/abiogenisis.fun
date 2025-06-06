@@ -1,5 +1,3 @@
-import { concatUint8Arrays } from '@/lib/utils/concat-uint8-arrays'
-
 export const operations = {
   bufferRight: 1,
   bufferLeft: 2,
@@ -13,7 +11,7 @@ export const operations = {
   loopEnd: 10,
 }
 
-const operationValues = Object.values(operations)
+const operationSet = new Set(Object.values(operations))
 const operationsCap = 1024 * 2
 
 /**
@@ -25,8 +23,11 @@ export function interact(fragmentA: Uint8Array, fragmentB: Uint8Array): [Uint8Ar
   // console.log('interaction start', fragmentA, fragmentB)
 
   const buffer = new Uint8Array(128)
-  // Create copies to avoid modifying original fragments
-  const program = concatUint8Arrays(new Uint8Array(fragmentA), new Uint8Array(fragmentB))
+  const program = new Uint8Array(fragmentA.length + fragmentB.length)
+  
+  // Directly copy fragments into program buffer without creating intermediate arrays
+  program.set(fragmentA, 0)
+  program.set(fragmentB, fragmentA.length)
 
   if (!matchingLoops(program)) {
     return [fragmentA, fragmentB]
@@ -39,7 +40,7 @@ export function interact(fragmentA: Uint8Array, fragmentB: Uint8Array): [Uint8Ar
   while (cursor < program.length) {
     // console.log('executing', { cursor, byte: program[cursor] })
 
-    if (operationValues.includes(program[cursor])) {
+    if (operationSet.has(program[cursor])) {
       opsUsed++
       if (opsUsed % 64 === 0) {
         // console.log(opsUsed, 'ops')
@@ -117,6 +118,7 @@ export function interact(fragmentA: Uint8Array, fragmentB: Uint8Array): [Uint8Ar
     cursor++
   }
 
+  // Create new arrays for the results to avoid modifying the input fragments
   const result: [Uint8Array, Uint8Array] = [
     program.slice(0, fragmentA.length),
     program.slice(fragmentA.length),
