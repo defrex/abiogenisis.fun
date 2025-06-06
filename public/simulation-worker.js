@@ -350,6 +350,35 @@ function initializeFragments(count = 1024) {
   
   // Initialize worker pool when fragments are initialized
   initializeWorkerPool()
+  
+  // Log initial fragment statistics for debugging
+  if (debugMode) {
+    let zeroCount = 0
+    let patternCount = 0
+    
+    for (let i = 0; i < Math.min(10, fragments.length); i++) {
+      const fragment = fragments[i]
+      const isAllZeros = fragment.every(b => b === 0)
+      if (isAllZeros) zeroCount++
+      
+      // Check for simple patterns
+      let isPattern = true
+      for (let j = 1; j < fragment.length; j++) {
+        if (fragment[j] !== fragment[0]) {
+          isPattern = false
+          break
+        }
+      }
+      if (isPattern) patternCount++
+    }
+    
+    debugLog('INFO', 'Fragments initialized', {
+      count: fragments.length,
+      sampleZeroFragments: zeroCount,
+      samplePatternFragments: patternCount,
+      firstFragmentPreview: Array.from(fragments[0].slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ')
+    })
+  }
 }
 
 // Fisher-Yates shuffle algorithm
@@ -581,7 +610,8 @@ async function processEpochParallel() {
               ratio: compressionResult.ratio,
               duration: compressionDuration,
               sampled: compressionResult.sampled,
-              sampleSize: compressionResult.sampleSize
+              sampleSize: compressionResult.sampleSize,
+              totalFragments: fragments.length
             })
             
             self.postMessage({

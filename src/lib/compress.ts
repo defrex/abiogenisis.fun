@@ -12,6 +12,26 @@ export async function compress(fragments: Array<Uint8Array>): Promise<{
     offset += arr.length
   }
 
+  // Check if we're in Node/Bun environment and use zlib
+  if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+    try {
+      const zlib = await import('zlib')
+      const util = await import('util')
+      const gzip = util.promisify(zlib.gzip)
+      
+      const compressed = await gzip(concatenatedArray)
+      const uncompressed = concatenatedArray.length
+      
+      return {
+        uncompressed,
+        compressed: compressed.length,
+        ratio: uncompressed === 0 ? 0 : compressed.length / uncompressed,
+      }
+    } catch (e) {
+      // Fall through to other methods if zlib is not available
+    }
+  }
+
   // Check if CompressionStream is available (browser environment)
   if (typeof CompressionStream !== 'undefined') {
     const cs = new CompressionStream('gzip')
