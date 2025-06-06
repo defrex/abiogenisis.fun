@@ -495,6 +495,14 @@ export default function Home() {
               </Stack>
             )}
 
+            <a
+              href="https://defrex.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="pt-4 text-center text-xs text-neutral-500 hover:underline"
+            >
+              Made with ♥︎ by Aron Jones
+            </a>
             {/* Debug Toggle */}
             <div className="flex items-center justify-between py-1">
               <div className="flex items-center gap-2">
@@ -516,14 +524,6 @@ export default function Home() {
                 }}
               />
             </div>
-            <a
-              href="https://defrex.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="pt-4 text-center text-xs text-neutral-500 hover:underline"
-            >
-              Made with ♥︎ by Aron Jones
-            </a>
           </Stack>
         </Stack>
       </div>
