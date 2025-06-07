@@ -881,6 +881,43 @@ self.onmessage = function(e) {
         debugLog('INFO', 'Debug mode toggled', { debugMode })
         break
         
+      case 'inject-fragment':
+        try {
+          if (data.fragment && data.fragment.length === 64) {
+            // Find a random position to inject the fragment
+            const targetIndex = Math.floor(Math.random() * fragments.length)
+            fragments[targetIndex] = new Uint8Array(data.fragment)
+            changedFragmentIndices.add(targetIndex)
+            
+            debugLog('INFO', 'Fragment injected', { 
+              targetIndex,
+              fragmentsTotal: fragments.length 
+            })
+            
+            // Send immediate update with the injected fragment
+            self.postMessage({
+              type: 'progress',
+              interactions,
+              interactionsPerSecond,
+              updateType: 'delta',
+              currentEpoch,
+              deltaUpdates: [{
+                index: targetIndex,
+                fragment: Array.from(fragments[targetIndex])
+              }]
+            })
+          } else {
+            debugLog('ERROR', 'Invalid fragment provided for injection', { 
+              fragmentLength: data.fragment ? data.fragment.length : 0 
+            })
+          }
+        } catch (error) {
+          debugLog('ERROR', 'Failed to inject fragment', { 
+            error: error.message 
+          })
+        }
+        break
+        
       default:
         debugLog('WARN', 'Unknown message type', { type })
     }

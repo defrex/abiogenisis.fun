@@ -1,6 +1,8 @@
 'use client'
 
 import { CompressionChart } from '@/components/compression-chart'
+import { FragmentCreator } from '@/components/fragment-creator'
+import { OperationLegend } from '@/components/operation-legend'
 import { OpiChart } from '@/components/opi-chart'
 import { SimulationDescription } from '@/components/simulation-description'
 import { Button } from '@/components/ui/button'
@@ -12,23 +14,7 @@ import { VirtualFragmentList } from '@/components/virtual-fragment-list'
 import { cn } from '@/lib/utils/cn'
 import { formatNumber } from '@/lib/utils/format-number'
 import { validateFragmentCount } from '@/lib/utils/validate-fragment-count'
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  Bug,
-  Circle,
-  IterationCcwIcon,
-  MinusIcon,
-  Pause,
-  Play,
-  PlusIcon,
-  Square,
-  SquareArrowDownIcon,
-  SquareArrowLeftIcon,
-  SquareArrowRightIcon,
-  SquareArrowUpIcon,
-  WifiZeroIcon,
-} from 'lucide-react'
+import { Bug, Circle, MinusIcon, Pause, Play, PlusIcon, Square } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 export default function Home() {
@@ -42,7 +28,7 @@ export default function Home() {
   const [playing, setPlaying] = useState(false)
   const [debugLogs, setDebugLogs] = useState<string[]>([])
   const [debugEnabled, setDebugEnabled] = useState<boolean>(false)
-  const [fragmentCount, setFragmentCount] = useState<number>(2 ** 16)
+  const [fragmentCount, setFragmentCount] = useState<number>(2 ** 6)
   const [fragmentCountInput, setFragmentCountInput] = useState<string>(
     fragmentCount.toLocaleString(),
   )
@@ -212,6 +198,15 @@ export default function Home() {
       mutationRate,
     })
   }, [fragmentCount, workerPoolSize, mutationRate])
+
+  const handleInjectFragment = useCallback((fragment: Uint8Array) => {
+    if (!workerRef.current) return
+
+    workerRef.current.postMessage({
+      type: 'inject-fragment',
+      fragment: Array.from(fragment),
+    })
+  }, [])
 
   return (
     <main className="h-screen flex">
@@ -557,60 +552,26 @@ export default function Home() {
               id: 'fragments',
               label: 'Programs',
               content: (
-                <div className="h-full flex flex-col">
+                <div className="h-full flex flex-col overflow-hidden">
                   <div className="flex-shrink-0 p-4 border-b border-neutral-700 bg-neutral-900">
-                    <Stack gap={2}>
-                      <Text value="Operation Reference" size="sm" />
-                      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-1 text-xs max-w-[768px]">
-                        <div className="flex items-center gap-1">
-                          <ArrowRightIcon className="h-3 w-3 text-blue-400" />
-                          <span className="text-neutral-400">Buf →</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <ArrowLeftIcon className="h-3 w-3 text-blue-400" />
-                          <span className="text-neutral-400">Buf ←</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <PlusIcon className="h-3 w-3 text-green-400" />
-                          <span className="text-neutral-400">Buf ++</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <MinusIcon className="h-3 w-3 text-red-400" />
-                          <span className="text-neutral-400">Buf --</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <SquareArrowRightIcon className="h-3 w-3 text-purple-400" />
-                          <span className="text-neutral-400">Prog →</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <SquareArrowLeftIcon className="h-3 w-3 text-purple-400" />
-                          <span className="text-neutral-400">Prog ←</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <SquareArrowDownIcon className="h-3 w-3 text-yellow-400" />
-                          <span className="text-neutral-400">Read</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <SquareArrowUpIcon className="h-3 w-3 text-yellow-400" />
-                          <span className="text-neutral-400">Write</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <IterationCcwIcon className="h-3 w-3 text-orange-400" />
-                          <span className="text-neutral-400">Loop [</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <IterationCcwIcon className="h-3 w-3 text-orange-400" />
-                          <span className="text-neutral-400">Loop ]</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <WifiZeroIcon className="h-3 w-3 text-neutral-400" />
-                          <span className="text-neutral-400">No-op</span>
-                        </div>
-                      </div>
-                    </Stack>
+                    <OperationLegend />
                   </div>
                   <div className="flex-1 overflow-hidden">
                     <VirtualFragmentList fragments={fragments} />
+                  </div>
+                </div>
+              ),
+            },
+            {
+              id: 'cheat',
+              label: 'Cheat',
+              content: (
+                <div className="h-full flex flex-col">
+                  <div className="flex-shrink-0 p-4 border-b border-neutral-700 bg-neutral-900 ">
+                    <OperationLegend />
+                  </div>
+                  <div className="flex-1 overflow-y-auto">
+                    <FragmentCreator onInject={handleInjectFragment} />
                   </div>
                 </div>
               ),
