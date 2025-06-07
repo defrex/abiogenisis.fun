@@ -19,11 +19,7 @@ describe('compress', () => {
     })
 
     it('should handle multiple fragments', async () => {
-      const fragments = [
-        new Uint8Array(64),
-        new Uint8Array(64),
-        new Uint8Array(64),
-      ]
+      const fragments = [new Uint8Array(64), new Uint8Array(64), new Uint8Array(64)]
       const result = await compress(fragments)
       expect(result.uncompressed).toBe(192)
       expect(result.compressed).toBeGreaterThan(0)
@@ -33,7 +29,9 @@ describe('compress', () => {
 
   describe('compression detection', () => {
     it('should detect highly compressible data (all zeros)', async () => {
-      const fragments = Array(10).fill(null).map(() => new Uint8Array(64))
+      const fragments = Array(10)
+        .fill(null)
+        .map(() => new Uint8Array(64))
       const result = await compress(fragments)
       expect(result.ratio).toBeLessThan(0.5) // Should compress very well
     })
@@ -41,28 +39,32 @@ describe('compress', () => {
     it('should detect repeating patterns', async () => {
       // Create fragments with repeating pattern
       const pattern = [1, 2, 3, 4, 5, 6, 7, 8]
-      const fragments = Array(10).fill(null).map(() => {
-        const fragment = new Uint8Array(64)
-        for (let i = 0; i < 64; i += pattern.length) {
-          fragment.set(pattern.slice(0, Math.min(pattern.length, 64 - i)), i)
-        }
-        return fragment
-      })
-      
+      const fragments = Array(10)
+        .fill(null)
+        .map(() => {
+          const fragment = new Uint8Array(64)
+          for (let i = 0; i < 64; i += pattern.length) {
+            fragment.set(pattern.slice(0, Math.min(pattern.length, 64 - i)), i)
+          }
+          return fragment
+        })
+
       const result = await compress(fragments)
       expect(result.ratio).toBeLessThan(0.8) // Should compress reasonably well
     })
 
     it('should detect random data as less compressible', async () => {
       // Create truly random fragments
-      const fragments = Array(10).fill(null).map(() => {
-        const fragment = new Uint8Array(64)
-        for (let i = 0; i < 64; i++) {
-          fragment[i] = Math.floor(Math.random() * 256)
-        }
-        return fragment
-      })
-      
+      const fragments = Array(10)
+        .fill(null)
+        .map(() => {
+          const fragment = new Uint8Array(64)
+          for (let i = 0; i < 64; i++) {
+            fragment[i] = Math.floor(Math.random() * 256)
+          }
+          return fragment
+        })
+
       const result = await compress(fragments)
       expect(result.ratio).toBeGreaterThan(0.9) // Random data doesn't compress well
     })
@@ -73,8 +75,10 @@ describe('compress', () => {
       for (let i = 0; i < 64; i++) {
         baseFragment[i] = i % 10 // Simple pattern
       }
-      
-      const fragments = Array(10).fill(null).map(() => new Uint8Array(baseFragment))
+
+      const fragments = Array(10)
+        .fill(null)
+        .map(() => new Uint8Array(baseFragment))
       const result = await compress(fragments)
       expect(result.ratio).toBeLessThan(0.3) // Should compress extremely well
     })
@@ -86,7 +90,7 @@ describe('compress', () => {
         new Uint8Array(64).map((_, i) => i), // Sequential
         new Uint8Array(64).map(() => Math.floor(Math.random() * 256)), // Random
       ]
-      
+
       const result = await compress(fragments)
       expect(result.ratio).toBeGreaterThan(0.3)
       expect(result.ratio).toBeLessThan(0.8)
@@ -97,7 +101,7 @@ describe('compress', () => {
     it('should calculate ratio as compressed/uncompressed', async () => {
       const fragments = [new Uint8Array(100).fill(0)]
       const result = await compress(fragments)
-      
+
       expect(result.ratio).toBe(result.compressed / result.uncompressed)
       expect(result.ratio).toBeGreaterThan(0)
       expect(result.ratio).toBeLessThanOrEqual(1.2) // Allow for header overhead
@@ -106,7 +110,7 @@ describe('compress', () => {
     it('should handle very small fragments', async () => {
       const fragments = [new Uint8Array(1).fill(42)]
       const result = await compress(fragments)
-      
+
       expect(result.uncompressed).toBe(1)
       expect(result.compressed).toBeGreaterThan(1) // Header overhead
       expect(result.ratio).toBeGreaterThan(1) // Compression makes it bigger
@@ -115,11 +119,7 @@ describe('compress', () => {
 
   describe('edge cases', () => {
     it('should handle fragments of different sizes', async () => {
-      const fragments = [
-        new Uint8Array(32),
-        new Uint8Array(64),
-        new Uint8Array(128),
-      ]
+      const fragments = [new Uint8Array(32), new Uint8Array(64), new Uint8Array(128)]
       const result = await compress(fragments)
       expect(result.uncompressed).toBe(32 + 64 + 128)
       expect(result.compressed).toBeGreaterThan(0)
@@ -127,7 +127,9 @@ describe('compress', () => {
     })
 
     it('should handle very large number of fragments', async () => {
-      const fragments = Array(1000).fill(null).map(() => new Uint8Array(64).fill(0))
+      const fragments = Array(1000)
+        .fill(null)
+        .map(() => new Uint8Array(64).fill(0))
       const result = await compress(fragments)
       expect(result.uncompressed).toBe(64000)
       expect(result.ratio).toBeLessThan(0.1) // Should compress extremely well
@@ -148,14 +150,14 @@ describe('compress', () => {
     afterEach(() => {
       // Restore original CompressionStream
       if (originalCompressionStream) {
-        (global as any).CompressionStream = originalCompressionStream
+        ;(global as any).CompressionStream = originalCompressionStream
       }
     })
 
     it('should use entropy-based estimation', async () => {
       const fragments = [new Uint8Array(64).fill(0)]
       const result = await compress(fragments)
-      
+
       // The fallback uses entropy estimation
       expect(result.uncompressed).toBe(64)
       expect(result.compressed).toBeGreaterThan(0)
@@ -167,7 +169,7 @@ describe('compress', () => {
       for (let i = 0; i < 64; i++) {
         fragment[i] = Math.floor(Math.random() * 256)
       }
-      
+
       const result = await compress([fragment])
       expect(result.ratio).toBeGreaterThan(0.8) // High entropy
     })

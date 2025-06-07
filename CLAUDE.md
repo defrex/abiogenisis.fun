@@ -39,26 +39,50 @@ bun run typecheck
 ### Core Simulation Logic
 
 - **Random Fragment Generation**: `src/lib/random-fragment.ts` - Creates random byte arrays with configurable bits per position
-- **Interaction System**: `src/lib/interact.ts` - Implements a Turing machine that processes and modifies program fragments
+- **Interaction System**: 
+  - `src/lib/interact.ts` - TypeScript implementation for UI and testing
+  - `public/shared-interact.js` - Shared implementation used by all workers (single source of truth)
 - **Compression Analysis**: `src/lib/compress.ts` - Measures the compressibility of fragments to track emergent complexity
 - **Example Fragments**: `src/lib/example-fragments.ts` - Pre-built examples including Simple Replicator, Data Mover, and Pattern Generator
 - **Worker-based Simulation**: 
   - `public/simulation-worker.js` - Main simulation worker with parallel batch processing
   - `public/interaction-worker.js` - Parallel worker for processing fragment interactions
+  - Both workers import the shared `interact()` function from `shared-interact.js`
+
+### State Management
+
+- **Custom Hook**: `src/hooks/use-simulation.ts` - Centralized simulation state management hook that:
+  - Manages all simulation state (metrics, configuration, UI state)
+  - Handles worker initialization and lifecycle
+  - Processes worker messages and updates
+  - Calculates weighted OPI with exponential decay
+  - Provides clean `state` and `actions` interface to components
 
 ### UI Components
 
-- **Main Application**: `src/app/page.tsx` - Main application page with simulation controls, metrics sidebar, and tabbed interface
+- **Main Application**: `src/app/page.tsx` - Simplified main page that uses the `useSimulation` hook for all state
 - **Charts**: 
   - `src/components/compression-chart.tsx` - Smooth line chart for compression ratio
   - `src/components/opi-chart.tsx` - Weighted average OPI visualization
 - **Program Visualization**: 
-  - `src/components/program.tsx` - Individual program fragment display
-  - `src/components/virtual-fragment-list.tsx` - Virtualized list for 1024 fragments
-  - `src/components/operation-legend.tsx` - Visual legend for operations
+  - `src/components/program.tsx` - Individual program fragment display using centralized operation config
+  - `src/components/virtual-fragment-list.tsx` - Virtualized list for large fragment counts
+  - `src/components/operation-legend.tsx` - Visual legend using centralized operation config
 - **Fragment Creator**: `src/components/fragment-creator.tsx` - Interactive editor for creating and testing fragments
 - **Simulation Description**: `src/components/simulation-description.tsx` - Educational content explaining the simulation
 - **UI Library**: `src/components/ui/` - Reusable components (Button, Stack, Tabs, Switch, etc.)
+
+### Shared Resources
+
+- **Operation Configuration**: `src/lib/operation-config.ts` - Centralized configuration for all operations including:
+  - Operation values, icons, colors, labels
+  - Category grouping (buffer, program, control)
+  - Used by all components that display operations
+- **Constants**: `src/lib/constants.ts` - All magic numbers and configuration values centralized:
+  - Fragment/buffer sizes, bit configurations
+  - Update intervals, limits, and thresholds
+  - UI measurements and storage keys
+  - Helper functions for validation
 
 ### Utilities
 
@@ -121,3 +145,46 @@ The system uses 10 operations with visual symbols:
   - **Programs**: Virtualized grid visualization of all program fragments with operation legend
   - **Cheat**: Fragment creator for designing, testing, and injecting custom programs
 - **Debug Mode**: Optional debug logging with performance monitoring and error tracking
+
+## Code Quality Best Practices
+
+When making changes to this codebase, follow these principles to maintain code quality:
+
+1. **Avoid Code Duplication**:
+   - Core algorithms (like `interact()`) should have a single implementation shared across all consumers
+   - Configuration data (operations, colors, labels) should be centralized in dedicated modules
+   - Constants and magic numbers must be defined in `src/lib/constants.ts`
+   - If you find yourself copying code, extract it into a shared function or module
+
+2. **State Management**:
+   - Keep React components focused on presentation; extract complex state logic into custom hooks
+   - Worker-related logic should be encapsulated and not scattered across components
+   - Use TypeScript interfaces to define clear contracts for state and actions
+   - Avoid prop drilling - use hooks to provide state where needed
+
+3. **Module Organization**:
+   - Each module should have a single, clear responsibility
+   - Shared logic between workers goes in `public/shared-*.js` files
+   - TypeScript implementations for UI/testing go in `src/lib/`
+   - Keep worker files focused on orchestration, not algorithm implementation
+
+4. **Testing and Type Safety**:
+   - Write tests for all core algorithms and utilities
+   - Use TypeScript's type system to catch errors at compile time
+   - Validate user inputs with proper type guards (see `validate-fragment-count.ts`)
+   - Keep test files co-located with implementation files
+
+5. **Performance Considerations**:
+   - Use virtualization for large lists (see `VirtualFragmentList`)
+   - Implement delta updates for frequently changing data
+   - Cache expensive computations (like compression calculations)
+   - Use Web Workers to keep the UI thread responsive
+
+6. **Naming and Documentation**:
+   - Use descriptive names that explain intent (e.g., `useSimulation` not `useData`)
+   - Document complex algorithms and non-obvious design decisions
+   - Keep this CLAUDE.md file updated when architecture changes
+
+## Memories
+
+- use bun

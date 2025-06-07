@@ -18,10 +18,10 @@ export async function compress(fragments: Array<Uint8Array>): Promise<{
       const zlib = await import('zlib')
       const util = await import('util')
       const gzip = util.promisify(zlib.gzip)
-      
+
       const compressed = await gzip(concatenatedArray)
       const uncompressed = concatenatedArray.length
-      
+
       return {
         uncompressed,
         compressed: compressed.length,

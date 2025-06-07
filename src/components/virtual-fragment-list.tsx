@@ -2,25 +2,27 @@
 
 import { Program } from '@/components/program'
 import { Stack } from '@/components/ui/stack'
+import { VIRTUAL_LIST_ITEM_HEIGHT, VIRTUAL_LIST_VISIBLE_BUFFER } from '@/lib/constants'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 type VirtualFragmentListProps = {
   fragments: Uint8Array[]
 }
 
-const ITEM_HEIGHT = 40 // Height of each fragment row in pixels
-const VISIBLE_BUFFER = 3 // Number of extra items to render outside viewport
-
 export function VirtualFragmentList({ fragments }: VirtualFragmentListProps) {
   const [scrollTop, setScrollTop] = useState(0)
   const [containerHeight, setContainerHeight] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const totalHeight = fragments.length * ITEM_HEIGHT
-  const startIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - VISIBLE_BUFFER)
+  const totalHeight = fragments.length * VIRTUAL_LIST_ITEM_HEIGHT
+  const startIndex = Math.max(
+    0,
+    Math.floor(scrollTop / VIRTUAL_LIST_ITEM_HEIGHT) - VIRTUAL_LIST_VISIBLE_BUFFER,
+  )
   const endIndex = Math.min(
     fragments.length - 1,
-    Math.ceil((scrollTop + containerHeight) / ITEM_HEIGHT) + VISIBLE_BUFFER,
+    Math.ceil((scrollTop + containerHeight) / VIRTUAL_LIST_ITEM_HEIGHT) +
+      VIRTUAL_LIST_VISIBLE_BUFFER,
   )
 
   const visibleFragments = fragments.slice(startIndex, endIndex + 1)
@@ -46,7 +48,7 @@ export function VirtualFragmentList({ fragments }: VirtualFragmentListProps) {
       <div style={{ height: totalHeight, position: 'relative' }}>
         <div
           style={{
-            transform: `translateY(${startIndex * ITEM_HEIGHT}px)`,
+            transform: `translateY(${startIndex * VIRTUAL_LIST_ITEM_HEIGHT}px)`,
             position: 'absolute',
             top: 0,
             left: 0,
@@ -57,7 +59,7 @@ export function VirtualFragmentList({ fragments }: VirtualFragmentListProps) {
             {visibleFragments.map((fragment, index) => (
               <div
                 key={startIndex + index}
-                style={{ height: ITEM_HEIGHT }}
+                style={{ height: VIRTUAL_LIST_ITEM_HEIGHT }}
                 className="flex items-center"
               >
                 <Program program={fragment} />

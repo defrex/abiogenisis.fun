@@ -2,13 +2,15 @@
 
 import { useEffect, useRef } from 'react'
 import * as echarts from 'echarts'
+import { calculateTheoreticalCompressionRatio } from '@/lib/utils/theoretical-averages'
 
 interface CompressionChartProps {
   data: Array<[number, number]> // [interactions, ratio]
+  bitsPerPosition?: number // Current bits per position setting
   className?: string
 }
 
-export function CompressionChart({ data, className }: CompressionChartProps) {
+export function CompressionChart({ data, bitsPerPosition = 6, className }: CompressionChartProps) {
   const chartRef = useRef<HTMLDivElement>(null)
   const chartInstance = useRef<echarts.ECharts | null>(null)
 
@@ -25,12 +27,44 @@ export function CompressionChart({ data, className }: CompressionChartProps) {
     // Prepare data for ECharts
     const chartData = data.map(([interactions, ratio]) => [interactions, ratio])
 
+    // Performance optimization flags based on dataset size
+    const isLargeDataset = data.length > 5000
+
+    // Calculate theoretical average for current settings
+    const theoreticalAverage = calculateTheoreticalCompressionRatio(bitsPerPosition)
+
+    // Calculate dynamic axis ranges based on actual data
+    let yMin: number | undefined
+    let yMax: number | undefined
+    let xMin: number | undefined
+    let xMax: number | undefined
+
+    if (data.length > 0) {
+      // Y-axis (compression ratio) range - include theoretical average
+      const values = data.map(([, ratio]) => ratio)
+      const dataMin = Math.min(...values, theoreticalAverage)
+      const dataMax = Math.max(...values, theoreticalAverage)
+      const yPadding = Math.max((dataMax - dataMin) * 0.15, 0.02) // 15% padding, minimum 0.02
+      yMin = Math.max(0, dataMin - yPadding)
+      yMax = dataMax + yPadding
+
+      // X-axis (interactions) range
+      const interactions = data.map(([interaction]) => interaction)
+      const xDataMin = Math.min(...interactions)
+      const xDataMax = Math.max(...interactions)
+      const xPadding = (xDataMax - xDataMin) * 0.05 // 5% padding
+      xMin = Math.max(0, xDataMin - xPadding)
+      xMax = xDataMax + xPadding
+    }
+
     const option: echarts.EChartsOption = {
       backgroundColor: 'transparent',
+      animation: !isLargeDataset, // Disable animations for large datasets
       grid: {
         left: '3%',
         right: '4%',
         bottom: '15%',
+        top: '5%', // Reduce top padding
         containLabel: true,
       },
       xAxis: {
@@ -38,6 +72,8 @@ export function CompressionChart({ data, className }: CompressionChartProps) {
         name: 'Interactions',
         nameLocation: 'middle',
         nameGap: 30,
+        min: xMin,
+        max: xMax,
         axisLine: {
           lineStyle: {
             color: '#525252',
@@ -55,8 +91,8 @@ export function CompressionChart({ data, className }: CompressionChartProps) {
         name: 'Compression Ratio',
         nameLocation: 'middle',
         nameGap: 50,
-        min: 0,
-        max: 1.2,
+        min: yMin,
+        max: yMax,
         axisLine: {
           lineStyle: {
             color: '#525252',
@@ -82,9 +118,31 @@ export function CompressionChart({ data, className }: CompressionChartProps) {
           itemStyle: {
             color: '#3b82f6',
           },
-          symbol: 'circle',
-          symbolSize: 4,
-          smooth: true,
+          symbol: isLargeDataset ? 'none' : 'circle',
+          symbolSize: isLargeDataset ? 0 : 4,
+          smooth: !isLargeDataset,
+          sampling: isLargeDataset ? 'lttb' : undefined,
+        },
+        {
+          name: 'Random Average',
+          type: 'line',
+          data:
+            data.length > 0
+              ? [
+                  [data[0][0], theoreticalAverage],
+                  [data[data.length - 1][0], theoreticalAverage],
+                ]
+              : [],
+          lineStyle: {
+            color: '#6b7280',
+            width: 1,
+            type: 'dashed',
+          },
+          itemStyle: {
+            color: '#6b7280',
+          },
+          symbol: 'none',
+          silent: true,
         },
       ],
       tooltip: {
@@ -97,6 +155,9 @@ export function CompressionChart({ data, className }: CompressionChartProps) {
         formatter: (params: any) => {
           if (Array.isArray(params) && params.length > 0) {
             const point = params[0]
+            if (point.seriesName === 'Random Average') {
+              return `Random Average: ${point.data[1].toFixed(3)}<br/>Interactions: ${point.data[0]}`
+            }
             return `Interactions: ${point.data[0]}<br/>Compression Ratio: ${point.data[1].toFixed(3)}`
           }
           return ''
@@ -104,7 +165,7 @@ export function CompressionChart({ data, className }: CompressionChartProps) {
       },
     }
 
-    chart.setOption(option)
+    chart.setOption(option, true) // Use notMerge=true to prevent artifacts from previous data
 
     // Handle resize
     const handleResize = () => {
@@ -115,7 +176,7 @@ export function CompressionChart({ data, className }: CompressionChartProps) {
     return () => {
       window.removeEventListener('resize', handleResize)
     }
-  }, [data])
+  }, [data, bitsPerPosition])
 
   // Cleanup on unmount
   useEffect(() => {

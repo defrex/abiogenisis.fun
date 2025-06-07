@@ -2,328 +2,23 @@
 
 import { CompressionChart } from '@/components/compression-chart'
 import { FragmentCreator } from '@/components/fragment-creator'
+import { MetricsExplanation } from '@/components/metrics-explanation'
 import { OperationLegend } from '@/components/operation-legend'
 import { OpiChart } from '@/components/opi-chart'
+import { SettingsTab } from '@/components/settings-tab'
 import { SimulationDescription } from '@/components/simulation-description'
 import { Button } from '@/components/ui/button'
 import { Stack } from '@/components/ui/stack'
-import { Switch } from '@/components/ui/switch'
 import { Tabs } from '@/components/ui/tabs'
 import { Text } from '@/components/ui/text/text'
 import { VirtualFragmentList } from '@/components/virtual-fragment-list'
+import { useSimulation } from '@/hooks/use-simulation'
 import { cn } from '@/lib/utils/cn'
 import { formatNumber } from '@/lib/utils/format-number'
-import { validateFragmentCount } from '@/lib/utils/validate-fragment-count'
-import { Bug, Circle, MinusIcon, Pause, Play, PlusIcon, Square } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Circle, Pause, Play, Square } from 'lucide-react'
 
 export default function Home() {
-  const [interactions, setInteractions] = useState<number | null>(null)
-  const [interactionsPerSecond, setInteractionsPerSecond] = useState<number>(0)
-  const [fragments, setFragments] = useState<Uint8Array[]>([])
-  const [compressionRatio, setCompressionRatio] = useState<Array<[number, number]>>([])
-  const [operationsPerInteraction, setOperationsPerInteraction] = useState<Array<[number, number]>>(
-    [],
-  )
-  const [weightedOPI, setWeightedOPI] = useState<number>(0)
-  const [playing, setPlaying] = useState(false)
-  const [debugLogs, setDebugLogs] = useState<string[]>([])
-  const [debugEnabled, setDebugEnabled] = useState<boolean>(false)
-  const [fragmentCount, setFragmentCount] = useState<number>(2 ** 6)
-  const [fragmentCountInput, setFragmentCountInput] = useState<string>(
-    fragmentCount.toLocaleString(),
-  )
-  const [workerPoolSize, setWorkerPoolSize] = useState<number>(6)
-  const [mutationRate, setMutationRate] = useState<number>(0.00024) // 0.024% default from paper
-  const [bitsPerPosition, setBitsPerPosition] = useState<4 | 5 | 6 | 7 | 8>(6) // default to 8 bits (256 values)
-  const [currentEpoch, setCurrentEpoch] = useState<number>(0)
-  const [workerStatus, setWorkerStatus] = useState<
-    'initializing' | 'running' | 'stopped' | 'error'
-  >('initializing')
-  const [lastHeartbeat, setLastHeartbeat] = useState<number>(Date.now())
-  const workerRef = useRef<Worker | null>(null)
-  const heartbeatRef = useRef<NodeJS.Timeout | null>(null)
-  const debugEnabledRef = useRef<boolean>(false)
-
-  // Calculate weighted average OPI using exponential decay
-  const calculateWeightedOPI = useCallback((opiHistory: Array<[number, number]>) => {
-    if (opiHistory.length === 0) return 0
-    
-    const decayConstant = 64 / 3 // ~21.3, gives exp(-3) ≈ 0.05 at 64 epochs ago
-    let weightedSum = 0
-    let totalWeight = 0
-    
-    // Process from most recent to oldest
-    const currentEpochIndex = opiHistory.length - 1
-    
-    for (let i = currentEpochIndex; i >= 0; i--) {
-      const epochsAgo = currentEpochIndex - i
-      const weight = Math.exp(-epochsAgo / decayConstant)
-      
-      // Only include epochs with meaningful weight (> 0.01)
-      if (weight > 0.01) {
-        weightedSum += opiHistory[i][1] * weight
-        totalWeight += weight
-      }
-    }
-    
-    return totalWeight > 0 ? weightedSum / totalWeight : 0
-  }, [])
-
-  // Initialize worker and simulation
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      workerRef.current = new Worker('/simulation-worker.js')
-
-      workerRef.current.onmessage = (e) => {
-        const { type, ...data } = e.data
-
-        switch (type) {
-          case 'initialized':
-            setWorkerStatus('stopped')
-            setInteractions(data.interactions)
-            setInteractionsPerSecond(0)
-            setFragments(data.fragments.map((f: number[]) => new Uint8Array(f)))
-            break
-
-          case 'progress':
-            setWorkerStatus('running')
-            setLastHeartbeat(Date.now())
-            setInteractions(data.interactions)
-            setInteractionsPerSecond(data.interactionsPerSecond || 0)
-            setCurrentEpoch(data.currentEpoch || 0)
-
-            // Handle delta updates vs full updates
-            if (data.updateType === 'delta' && data.deltaUpdates) {
-              // Apply delta updates efficiently
-              setFragments((prevFragments) => {
-                const newFragments = [...prevFragments]
-                for (const update of data.deltaUpdates) {
-                  newFragments[update.index] = new Uint8Array(update.fragment)
-                }
-                return newFragments
-              })
-            } else {
-              // Full update
-              setFragments(data.fragments.map((f: number[]) => new Uint8Array(f)))
-            }
-            break
-
-          case 'compression':
-            setCompressionRatio((prev) => [...prev, [data.interactions, data.ratio]])
-            break
-
-          case 'opi':
-            setOperationsPerInteraction((prev) => [...prev, [data.interactions, data.opi]])
-            break
-
-          case 'debug':
-            // Only process debug logs if debug is enabled
-            if (debugEnabledRef.current) {
-              const timestamp = new Date(data.timestamp).toLocaleTimeString()
-              const logEntry = `[${timestamp}] ${data.level}: ${data.message} ${JSON.stringify(data, null, 2)}`
-              setDebugLogs((prev) => {
-                const newLogs = [...prev, logEntry]
-                // Keep only last 100 log entries
-                return newLogs.slice(-100)
-              })
-            }
-
-            // Always update status based on error messages, even if debug is off
-            if (data.level === 'ERROR') {
-              setWorkerStatus('error')
-            }
-            break
-
-          case 'test':
-            console.log('Received test message from worker:', data.message)
-            setDebugLogs((prev) => [...prev, `[TEST] ${data.message}`])
-            break
-        }
-      }
-
-      // Handle worker errors
-      workerRef.current.onerror = (error) => {
-        console.error('Worker error:', error)
-        setWorkerStatus('error')
-        setDebugLogs((prev) => [...prev, `[ERROR] Worker error: ${error.message}`])
-      }
-
-      // Initialize the simulation with fragment count, worker pool size, mutation rate, and bitsPerPosition
-      workerRef.current.postMessage({
-        type: 'initialize',
-        fragmentCount,
-        workerPoolSize,
-        mutationRate,
-        bitsPerPosition,
-      })
-    }
-
-    return () => {
-      if (workerRef.current) {
-        workerRef.current.terminate()
-      }
-    }
-  }, [fragmentCount, workerPoolSize, mutationRate, bitsPerPosition, calculateWeightedOPI])
-
-  // Separate effect for heartbeat monitoring
-  useEffect(() => {
-    if (heartbeatRef.current) {
-      clearInterval(heartbeatRef.current)
-    }
-
-    heartbeatRef.current = setInterval(() => {
-      const timeSinceLastHeartbeat = Date.now() - lastHeartbeat
-      if (timeSinceLastHeartbeat > 10000 && playing) {
-        // 10 seconds timeout
-        console.warn('Worker appears to be hung - no heartbeat for', timeSinceLastHeartbeat, 'ms')
-        setWorkerStatus('error')
-        setDebugLogs((prev) => [
-          ...prev,
-          `[WARN] Worker heartbeat timeout: ${timeSinceLastHeartbeat}ms`,
-        ])
-      }
-    }, 5000) // Check every 5 seconds
-
-    return () => {
-      if (heartbeatRef.current) {
-        clearInterval(heartbeatRef.current)
-      }
-    }
-  }, [lastHeartbeat, playing])
-
-  const handleTogglePlaying = useCallback(() => {
-    if (!workerRef.current) return
-
-    setPlaying((playing) => {
-      const newPlaying = !playing
-      if (newPlaying) {
-        workerRef.current?.postMessage({ type: 'start' })
-      } else {
-        workerRef.current?.postMessage({ type: 'stop' })
-      }
-      return newPlaying
-    })
-  }, [])
-
-  const handleReset = useCallback(() => {
-    if (!workerRef.current) return
-
-    // Stop the simulation if it's running
-    setPlaying(false)
-    workerRef.current.postMessage({ type: 'stop' })
-
-    // Reset all state
-    setCompressionRatio([])
-    setOperationsPerInteraction([])
-    setCurrentEpoch(0)
-    setWeightedOPI(0)
-    setInteractions(null)
-    setInteractionsPerSecond(0)
-
-    // Give the worker a moment to stop, then reinitialize
-    setTimeout(() => {
-      workerRef.current?.postMessage({
-        type: 'initialize',
-        fragmentCount,
-        workerPoolSize,
-        mutationRate,
-        bitsPerPosition,
-      })
-    }, 100)
-  }, [fragmentCount, workerPoolSize, mutationRate, bitsPerPosition])
-
-  const handleInjectFragment = useCallback((fragment: Uint8Array) => {
-    if (!workerRef.current) return
-
-    workerRef.current.postMessage({
-      type: 'inject-fragment',
-      fragment: Array.from(fragment),
-    })
-  }, [])
-
-  // Calculate weighted average OPI with exponential decay
-  const getWeightedOPI = useCallback(() => {
-    if (operationsPerInteraction.length === 0) return 0
-    
-    // Use exponential decay: weight = exp(-n / decayConstant)
-    // Increased decay constant for smoother averaging
-    // decayConstant = 64 gives ~37% weight at 64 epochs ago (vs ~5% before)
-    const decayConstant = 64
-    let weightedSum = 0
-    let totalWeight = 0
-    
-    // Consider more history for stability (up to 128 epochs)
-    const dataPoints = operationsPerInteraction.slice(-128)
-    const numPoints = dataPoints.length
-    
-    // Apply double smoothing: first exponential weights, then moving average
-    const smoothingWindow = Math.min(5, numPoints)
-    
-    for (let i = 0; i < numPoints; i++) {
-      const epochsAgo = numPoints - 1 - i
-      const weight = Math.exp(-epochsAgo / decayConstant)
-      
-      // Apply local averaging for extra smoothing
-      let localSum = 0
-      let localCount = 0
-      for (let j = Math.max(0, i - Math.floor(smoothingWindow/2)); 
-           j <= Math.min(numPoints - 1, i + Math.floor(smoothingWindow/2)); 
-           j++) {
-        localSum += dataPoints[j][1]
-        localCount++
-      }
-      const smoothedValue = localCount > 0 ? localSum / localCount : dataPoints[i][1]
-      
-      weightedSum += smoothedValue * weight
-      totalWeight += weight
-    }
-    
-    return totalWeight > 0 ? weightedSum / totalWeight : 0
-  }, [operationsPerInteraction])
-
-  // Update weighted OPI state when operations data changes
-  useEffect(() => {
-    setWeightedOPI(getWeightedOPI())
-  }, [getWeightedOPI])
-
-  // Calculate weighted OPI history for chart
-  const weightedOPIHistory = useMemo(() => {
-    const result: Array<[number, number]> = []
-    const decayConstant = 64
-    const smoothingWindow = 5
-    
-    for (let i = 0; i < operationsPerInteraction.length; i++) {
-      const startIdx = Math.max(0, i - 127) // Consider up to 128 epochs back
-      let weightedSum = 0
-      let totalWeight = 0
-      
-      for (let j = startIdx; j <= i; j++) {
-        const epochsAgo = i - j
-        const weight = Math.exp(-epochsAgo / decayConstant)
-        
-        // Apply local averaging for the historical data point
-        let localSum = 0
-        let localCount = 0
-        const halfWindow = Math.floor(smoothingWindow / 2)
-        for (let k = Math.max(0, j - halfWindow); 
-             k <= Math.min(operationsPerInteraction.length - 1, j + halfWindow); 
-             k++) {
-          localSum += operationsPerInteraction[k][1]
-          localCount++
-        }
-        const smoothedValue = localCount > 0 ? localSum / localCount : operationsPerInteraction[j][1]
-        
-        weightedSum += smoothedValue * weight
-        totalWeight += weight
-      }
-      
-      const weightedOpi = totalWeight > 0 ? weightedSum / totalWeight : 0
-      result.push([operationsPerInteraction[i][0], weightedOpi])
-    }
-    
-    return result
-  }, [operationsPerInteraction])
+  const { state, actions, weightedOPIHistory } = useSimulation()
 
   return (
     <main className="h-screen flex">
@@ -340,10 +35,10 @@ export default function Home() {
                     variant="ghost"
                     onClick={(event) => {
                       event.preventDefault()
-                      handleTogglePlaying()
+                      actions.togglePlaying()
                     }}
                   >
-                    {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                    {state.playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                   </Button>
 
                   <Button
@@ -351,7 +46,7 @@ export default function Home() {
                     variant="ghost"
                     onClick={(event) => {
                       event.preventDefault()
-                      handleReset()
+                      actions.reset()
                     }}
                     title="Stop and reset simulation"
                   >
@@ -363,210 +58,33 @@ export default function Home() {
                   <Circle
                     className={cn(
                       'h-3 w-3 fill-current',
-                      workerStatus === 'running' && playing && 'text-green-400',
-                      workerStatus === 'error' && 'text-red-400',
-                      ((workerStatus === 'running' && !playing) ||
-                        (workerStatus === 'stopped' &&
-                          interactions !== null &&
-                          interactions > 0)) &&
+                      state.workerStatus === 'running' && state.playing && 'text-green-400',
+                      state.workerStatus === 'error' && 'text-red-400',
+                      ((state.workerStatus === 'running' && !state.playing) ||
+                        (state.workerStatus === 'stopped' &&
+                          state.interactions !== null &&
+                          state.interactions > 0)) &&
                         'text-orange-400',
-                      workerStatus === 'stopped' &&
-                        (interactions === null || interactions === 0) &&
+                      state.workerStatus === 'stopped' &&
+                        (state.interactions === null || state.interactions === 0) &&
                         'text-yellow-400',
-                      workerStatus === 'initializing' && 'text-blue-400',
+                      state.workerStatus === 'initializing' && 'text-blue-400',
                     )}
                   />
                   <Text
                     value={
-                      workerStatus === 'error'
+                      state.workerStatus === 'error'
                         ? 'Error'
-                        : workerStatus === 'initializing'
+                        : state.workerStatus === 'initializing'
                           ? 'Initializing'
-                          : workerStatus === 'running' && playing
+                          : state.workerStatus === 'running' && state.playing
                             ? 'Running'
-                            : interactions !== null && interactions > 0
+                            : state.interactions !== null && state.interactions > 0
                               ? 'Paused'
                               : 'Stopped'
                     }
                     size="sm"
                   />
-                </div>
-              </div>
-
-              {/* Mutation Rate Control */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Text value="Mutation Rate" color="light" size="sm" />
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={mutationRate}
-                      onChange={(e) => setMutationRate(parseFloat(e.target.value))}
-                      disabled={
-                        workerStatus === 'running' ||
-                        (workerStatus === 'stopped' && interactions !== null && interactions > 0)
-                      }
-                      className={cn(
-                        'px-2 py-1 text-sm bg-neutral-800 border border-neutral-700 rounded',
-                        'focus:outline-none focus:border-neutral-600',
-                        'disabled:opacity-50 disabled:cursor-not-allowed',
-                      )}
-                    >
-                      <option value="0">0% (None)</option>
-                      <option value="0.00012">0.012%</option>
-                      <option value="0.00024">0.024%</option>
-                      <option value="0.00048">0.048%</option>
-                      <option value="0.00096">0.096%</option>
-                      <option value="0.00192">0.192%</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Fragment Count Control */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Text value="Population" color="light" size="sm" />
-                  <input
-                    type="text"
-                    value={fragmentCountInput}
-                    onChange={(e) => {
-                      const rawValue = e.target.value
-                      setFragmentCountInput(rawValue)
-
-                      // Validate and update fragment count
-                      const validation = validateFragmentCount(rawValue)
-                      if (validation.isValid && validation.value) {
-                        setFragmentCount(validation.value)
-                      }
-                    }}
-                    disabled={
-                      workerStatus === 'running' ||
-                      (workerStatus === 'stopped' && interactions !== null && interactions > 0)
-                    }
-                    className={cn(
-                      'w-20 px-2 py-1 text-sm bg-neutral-800 border rounded',
-                      'focus:outline-none',
-                      'disabled:opacity-50 disabled:cursor-not-allowed',
-                      // Validation styling
-                      validateFragmentCount(fragmentCountInput).isValid
-                        ? 'border-neutral-700 focus:border-neutral-600'
-                        : 'border-red-500 focus:border-red-400',
-                    )}
-                  />
-                </div>
-
-                {/* Power of 2 Slider */}
-                <input
-                  type="range"
-                  min="6"
-                  max="20"
-                  step="1"
-                  value={Math.round(Math.log2(fragmentCount))}
-                  onChange={(e) => {
-                    const power = parseInt(e.target.value)
-                    const value = Math.pow(2, power)
-                    setFragmentCount(value)
-                    setFragmentCountInput(value.toLocaleString())
-                  }}
-                  disabled={
-                    workerStatus === 'running' ||
-                    (workerStatus === 'stopped' && interactions !== null && interactions > 0)
-                  }
-                  className={cn(
-                    'w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer',
-                    'disabled:opacity-50 disabled:cursor-not-allowed',
-                    '[&::-webkit-slider-thumb]:appearance-none',
-                    '[&::-webkit-slider-thumb]:w-4',
-                    '[&::-webkit-slider-thumb]:h-4',
-                    '[&::-webkit-slider-thumb]:bg-white',
-                    '[&::-webkit-slider-thumb]:rounded-full',
-                    '[&::-webkit-slider-thumb]:cursor-pointer',
-                    '[&::-moz-range-thumb]:w-4',
-                    '[&::-moz-range-thumb]:h-4',
-                    '[&::-moz-range-thumb]:bg-white',
-                    '[&::-moz-range-thumb]:rounded-full',
-                    '[&::-moz-range-thumb]:border-0',
-                    '[&::-moz-range-thumb]:cursor-pointer',
-                  )}
-                />
-
-                {/* Power of 2 labels */}
-                <div className="flex justify-between text-xs text-neutral-500">
-                  <span title="64">2⁶</span>
-                  <span title="1,024">2¹⁰</span>
-                  <span title="32,768">2¹⁵</span>
-                  <span title="1,048,576">2²⁰</span>
-                </div>
-              </div>
-              {/* Worker Pool Size Control */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Text value="Worker Pool" color="light" size="sm" />
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setWorkerPoolSize(Math.max(1, workerPoolSize - 1))}
-                      disabled={
-                        workerPoolSize <= 1 ||
-                        workerStatus === 'running' ||
-                        (workerStatus === 'stopped' && interactions !== null && interactions > 0)
-                      }
-                      className={cn(
-                        'w-6 h-6 rounded border border-neutral-700 bg-neutral-800',
-                        'flex items-center justify-center',
-                        'hover:bg-neutral-700 transition-colors',
-                        'disabled:opacity-50 disabled:cursor-not-allowed',
-                      )}
-                    >
-                      <MinusIcon className="h-3 w-3" />
-                    </button>
-                    <Text value={workerPoolSize.toString()} size="sm" className="w-8 text-center" />
-                    <button
-                      onClick={() => setWorkerPoolSize(Math.min(16, workerPoolSize + 1))}
-                      disabled={
-                        workerPoolSize >= 16 ||
-                        workerStatus === 'running' ||
-                        (workerStatus === 'stopped' && interactions !== null && interactions > 0)
-                      }
-                      className={cn(
-                        'w-6 h-6 rounded border border-neutral-700 bg-neutral-800',
-                        'flex items-center justify-center',
-                        'hover:bg-neutral-700 transition-colors',
-                        'disabled:opacity-50 disabled:cursor-not-allowed',
-                      )}
-                    >
-                      <PlusIcon className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bits Per Position Control */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Text value="Bits Per Position" color="light" size="sm" />
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={bitsPerPosition}
-                      onChange={(e) =>
-                        setBitsPerPosition(parseInt(e.target.value) as 4 | 5 | 6 | 7 | 8)
-                      }
-                      disabled={
-                        workerStatus === 'running' ||
-                        (workerStatus === 'stopped' && interactions !== null && interactions > 0)
-                      }
-                      className={cn(
-                        'px-2 py-1 text-sm bg-neutral-800 border border-neutral-700 rounded',
-                        'focus:outline-none focus:border-neutral-600',
-                        'disabled:opacity-50 disabled:cursor-not-allowed',
-                      )}
-                    >
-                      <option value="4">4 bits (16 values)</option>
-                      <option value="5">5 bits (32 values)</option>
-                      <option value="6">6 bits (64 values)</option>
-                      <option value="7">7 bits (128 values)</option>
-                      <option value="8">8 bits (256 values)</option>
-                    </select>
-                  </div>
                 </div>
               </div>
             </Stack>
@@ -575,20 +93,26 @@ export default function Home() {
             <Stack gap={4}>
               <div className="flex items-center justify-between">
                 <Text value="Epoch" color="light" size="sm" />
-                <Text value={currentEpoch > 0 ? formatNumber(currentEpoch) : '—'} size="sm" />
+                <Text
+                  value={state.currentEpoch > 0 ? formatNumber(state.currentEpoch) : '—'}
+                  size="sm"
+                />
               </div>
 
               <div className="flex items-center justify-between">
                 <Text value="Interactions" color="light" size="sm" />
-                <Text value={interactions !== null ? formatNumber(interactions) : '0'} size="sm" />
+                <Text
+                  value={state.interactions !== null ? formatNumber(state.interactions) : '0'}
+                  size="sm"
+                />
               </div>
 
               <div className="flex items-center justify-between">
                 <Text value="Interactions/Second" color="light" size="sm" />
                 <Text
                   value={
-                    interactionsPerSecond > 0
-                      ? `${formatNumber(Math.round(interactionsPerSecond))}/s`
+                    state.interactionsPerSecond > 0
+                      ? `${formatNumber(Math.round(state.interactionsPerSecond))}/s`
                       : '—'
                   }
                   size="sm"
@@ -598,11 +122,7 @@ export default function Home() {
               <div className="flex items-center justify-between">
                 <Text value="Operations/Interaction" color="light" size="sm" />
                 <Text
-                  value={
-                    weightedOPI > 0
-                      ? weightedOPI.toFixed(1)
-                      : '—'
-                  }
+                  value={state.weightedOPI > 0 ? state.weightedOPI.toFixed(1) : '—'}
                   size="sm"
                 />
               </div>
@@ -611,8 +131,8 @@ export default function Home() {
                 <Text value="Compression Ratio" color="light" size="sm" />
                 <Text
                   value={
-                    compressionRatio.length > 0
-                      ? compressionRatio[compressionRatio.length - 1][1].toFixed(3)
+                    state.compressionRatio.length > 0
+                      ? state.compressionRatio[state.compressionRatio.length - 1][1].toFixed(3)
                       : '—'
                   }
                   size="sm"
@@ -621,17 +141,21 @@ export default function Home() {
             </Stack>
           </Stack>
           <Stack>
-            {debugEnabled && (
+            {state.debugEnabled && (
               <Stack gap={4}>
                 <Text value="Debug Log" size="lg" />
                 <div className="bg-neutral-800 rounded p-3 h-40 overflow-y-auto text-xs font-mono">
-                  {debugLogs.slice(-20).map((log, index) => (
+                  {state.debugLogs.slice(-20).map((log, index) => (
                     <div key={index} className="mb-1 text-neutral-300">
                       {log}
                     </div>
                   ))}
                 </div>
-                <Button size="sm" variant="outline" onClick={() => setDebugLogs([])}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => actions.setDebugEnabled(state.debugEnabled)}
+                >
                   Clear Debug Log
                 </Button>
               </Stack>
@@ -645,27 +169,6 @@ export default function Home() {
             >
               <Text value="Made with ♥︎ by Aron Jones" size="sm" color="light" />
             </a>
-            {/* Debug Toggle */}
-            <div className="flex items-center justify-between py-1">
-              <div className="flex items-center gap-2">
-                <Bug className="h-4 w-4 text-muted-foreground" />
-                <Text value="Debug" size="sm" color="light" />
-              </div>
-              <Switch
-                checked={debugEnabled}
-                onCheckedChange={setDebugEnabled}
-                onClick={() => {
-                  const newDebugState = !debugEnabled
-                  if (workerRef.current) {
-                    debugEnabledRef.current = newDebugState
-                    workerRef.current.postMessage({ type: 'debug-toggle', enabled: newDebugState })
-                    if (!newDebugState) {
-                      setDebugLogs([])
-                    }
-                  }
-                }}
-              />
-            </div>
           </Stack>
         </Stack>
       </div>
@@ -677,30 +180,10 @@ export default function Home() {
             {
               id: 'about',
               label: 'About',
-              content: <SimulationDescription fragmentCount={fragmentCount} />,
+              content: <SimulationDescription fragmentCount={state.fragmentCount} />,
             },
             {
-              id: 'charts',
-              label: 'Metrics',
-              content: (
-                <div className="p-6 h-full flex flex-col gap-12">
-                  <div className="flex-1">
-                    <Text value="Compression Ratio" size="lg" />
-                    <CompressionChart data={compressionRatio} className="h-full" />
-                  </div>
-                  <div className="flex-1">
-                    <Text value="Operations Per Interaction" size="lg" />
-                    <OpiChart 
-                      data={operationsPerInteraction} 
-                      weightedData={weightedOPIHistory}
-                      className="h-full" 
-                    />
-                  </div>
-                </div>
-              ),
-            },
-            {
-              id: 'fragments',
+              id: 'programs',
               label: 'Programs',
               content: (
                 <div className="h-full flex flex-col overflow-hidden">
@@ -708,14 +191,64 @@ export default function Home() {
                     <OperationLegend />
                   </div>
                   <div className="flex-1 overflow-hidden">
-                    <VirtualFragmentList fragments={fragments} />
+                    <VirtualFragmentList fragments={state.fragments} />
                   </div>
                 </div>
               ),
             },
             {
-              id: 'cheat',
-              label: 'Cheat',
+              id: 'metrics',
+              label: 'Metrics',
+              content: (
+                <div className="p-6 h-full flex flex-col gap-8">
+                  {/* Compression Ratio Section */}
+                  <div className="flex-1 min-h-0">
+                    <div className="flex gap-6 h-full">
+                      <div className="flex-1 min-w-0">
+                        <Text value="Compression Ratio" size="lg" />
+                        <CompressionChart
+                          data={state.compressionRatio}
+                          bitsPerPosition={state.bitsPerPosition}
+                          className="h-full"
+                        />
+                      </div>
+                      <div className="w-72 flex-shrink-0 bg-neutral-900 rounded-lg p-4 border border-neutral-700">
+                        <MetricsExplanation
+                          metric="compression"
+                          bitsPerPosition={state.bitsPerPosition}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* OPI Section */}
+                  <div className="flex-1 min-h-0">
+                    <div className="flex gap-6 h-full">
+                      <div className="flex-1 min-w-0">
+                        <Text value="Operations Per Interaction" size="lg" />
+                        <OpiChart
+                          data={state.operationsPerInteraction}
+                          weightedData={weightedOPIHistory}
+                          bitsPerPosition={state.bitsPerPosition}
+                          className="h-full"
+                        />
+                      </div>
+                      <div className="w-72 flex-shrink-0 bg-neutral-900 rounded-lg p-4 border border-neutral-700">
+                        <MetricsExplanation metric="opi" bitsPerPosition={state.bitsPerPosition} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              id: 'settings',
+              label: 'Settings',
+              content: <SettingsTab state={state} actions={actions} />,
+            },
+            {
+              id: 'design',
+              label: 'Design',
               content: (
                 <div className="h-full flex flex-col">
                   <div className="flex-shrink-0 p-4 border-b border-neutral-700 bg-neutral-900 ">
@@ -723,8 +256,8 @@ export default function Home() {
                   </div>
                   <div className="flex-1 overflow-y-auto">
                     <FragmentCreator
-                      onInject={handleInjectFragment}
-                      bitsPerPosition={bitsPerPosition}
+                      onInject={actions.injectFragment}
+                      bitsPerPosition={state.bitsPerPosition}
                     />
                   </div>
                 </div>

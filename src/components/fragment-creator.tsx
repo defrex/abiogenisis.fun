@@ -6,42 +6,10 @@ import { Stack } from '@/components/ui/stack'
 import { Text } from '@/components/ui/text/text'
 import { EXAMPLES, type FragmentExample } from '@/lib/example-fragments'
 import { interact } from '@/lib/interact'
+import { OPERATIONS_LIST, NO_OP_CONFIG, type OperationConfig } from '@/lib/operation-config'
 import { cn } from '@/lib/utils/cn'
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  Copy,
-  IterationCcwIcon,
-  MinusIcon,
-  Play,
-  PlusIcon,
-  Save,
-  SquareArrowDownIcon,
-  SquareArrowLeftIcon,
-  SquareArrowRightIcon,
-  SquareArrowUpIcon,
-  Trash2,
-  Upload,
-  WifiZeroIcon,
-} from 'lucide-react'
+import { Copy, Play, Save, Trash2, Upload } from 'lucide-react'
 import { useEffect, useState } from 'react'
-
-// Operation definitions with their byte values (matching interact.ts)
-const OPERATIONS = [
-  { value: 1, icon: ArrowRightIcon, label: 'Buffer Right', color: 'text-blue-400' },
-  { value: 2, icon: ArrowLeftIcon, label: 'Buffer Left', color: 'text-blue-400' },
-  { value: 3, icon: PlusIcon, label: 'Buffer Increment', color: 'text-green-400' },
-  { value: 4, icon: MinusIcon, label: 'Buffer Decrement', color: 'text-red-400' },
-  { value: 5, icon: SquareArrowRightIcon, label: 'Program Right', color: 'text-purple-400' },
-  { value: 6, icon: SquareArrowLeftIcon, label: 'Program Left', color: 'text-purple-400' },
-  { value: 7, icon: SquareArrowDownIcon, label: 'Read (Prog→Buf)', color: 'text-yellow-400' },
-  { value: 8, icon: SquareArrowUpIcon, label: 'Write (Buf→Prog)', color: 'text-yellow-400' },
-  { value: 9, icon: IterationCcwIcon, label: 'Loop Start [', color: 'text-orange-400' },
-  { value: 10, icon: IterationCcwIcon, label: 'Loop End ]', color: 'text-orange-400' },
-]
-
-// No-op operation (any value that isn't 1-10)
-const NO_OP = { value: 255, icon: WifiZeroIcon, label: 'No-op', color: 'text-neutral-400' }
 
 interface SavedFragment {
   id: string
@@ -142,7 +110,7 @@ export function FragmentCreator({ onInject, bitsPerPosition = 8 }: FragmentCreat
     localStorage.setItem('savedFragments', JSON.stringify(savedFragments))
   }, [savedFragments])
 
-  const handleByteClick = (index: number, operation: (typeof OPERATIONS)[0] | typeof NO_OP) => {
+  const handleByteClick = (index: number, operation: OperationConfig) => {
     const newBytes = [...bytes]
     newBytes[index] = operation.value
     setBytes(newBytes)
@@ -194,8 +162,8 @@ export function FragmentCreator({ onInject, bitsPerPosition = 8 }: FragmentCreat
   }
 
   const getOperationForByte = (byte: number) => {
-    const op = OPERATIONS.find((o) => o.value === byte)
-    return op || NO_OP
+    const op = OPERATIONS_LIST.find((o) => o.value === byte)
+    return op || NO_OP_CONFIG
   }
 
   const runTest = () => {
@@ -261,13 +229,13 @@ export function FragmentCreator({ onInject, bitsPerPosition = 8 }: FragmentCreat
                         )}
                         onClick={() => {
                           // Cycle through operations
-                          const currentOpIndex = OPERATIONS.findIndex((o) => o.value === byte)
+                          const currentOpIndex = OPERATIONS_LIST.findIndex((o) => o.value === byte)
                           if (currentOpIndex === -1) {
-                            handleByteClick(index, OPERATIONS[0])
-                          } else if (currentOpIndex === OPERATIONS.length - 1) {
-                            handleByteClick(index, NO_OP)
+                            handleByteClick(index, OPERATIONS_LIST[0])
+                          } else if (currentOpIndex === OPERATIONS_LIST.length - 1) {
+                            handleByteClick(index, NO_OP_CONFIG)
                           } else {
-                            handleByteClick(index, OPERATIONS[currentOpIndex + 1])
+                            handleByteClick(index, OPERATIONS_LIST[currentOpIndex + 1])
                           }
                         }}
                       >

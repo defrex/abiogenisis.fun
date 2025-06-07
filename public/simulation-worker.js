@@ -1,191 +1,77 @@
 // Web Worker for running the abiogenesis simulation
 // This isolates the heavy computation from the UI thread
 
+// Import shared interact function
+importScripts('./shared-interact.js')
+
+// Access the exported functions from shared-interact.js
+const { interact: sharedInteract, operations, operationNameMap } = self;
+
+// Import constants from shared-interact.js
+const { FRAGMENT_SIZE, BUFFER_SIZE, PROGRAM_SIZE } = self;
+
+// Additional constants (matching src/lib/constants.ts)
+const DEFAULT_FRAGMENT_COUNT = 64
+const DEFAULT_WORKER_POOL_SIZE = 4
+const DEFAULT_MUTATION_RATE = 0.00024
+const DEFAULT_BITS_PER_POSITION = 6
+const FULL_UPDATE_INTERVAL = 1000
+const COMPRESSION_SAMPLE_SIZE = 64
+const COMPRESSION_CACHE_SIZE = 100
+
 // Utility functions
 
 // Configuration for random fragment generation
-let bitsPerPosition = 8 // Default to 8 bits (256 values)
+let bitsPerPosition = 6 // Default to 6 bits (64 values)
 
 function randomFragment() {
   const maxValue = Math.pow(2, bitsPerPosition)
   
   // Uniform distribution over all possible values based on bitsPerPosition
-  return new Uint8Array(64).map(() => Math.floor(Math.random() * maxValue))
+  return new Uint8Array(FRAGMENT_SIZE).map(() => Math.floor(Math.random() * maxValue))
 }
 
-// Copy of operations and interact function from interact.ts
-const operations = {
-  bufferRight: 1,
-  bufferLeft: 2,
-  bufferIncrement: 3,
-  bufferDecrement: 4,
-  programRight: 5,
-  programLeft: 6,
-  programRead: 7,
-  programWrite: 8,
-  loopStart: 9,
-  loopEnd: 10,
-}
-
-const operationSet = new Set(Object.values(operations))
-const operationsCap = 1024 * 2
-
-// Pre-allocated reusable buffers for 64-byte fragments
-const sharedBuffer = new Uint8Array(128)
-const sharedProgram = new Uint8Array(128)
-
-// Pre-compute operation name mapping for fast lookups
-const operationNameMap = new Map(
-  Object.entries(operations).map(([name, value]) => [value, name])
-)
-
-function matchingLoops(program) {
-  let depth = 0
-  for (let i = 0; i < program.length; i++) {
-    if (program[i] === operations.loopStart) {
-      depth++
-    } else if (program[i] === operations.loopEnd) {
-      depth--
-    }
-    if (depth < 0) {
-      return false
-    }
-  }
-  return depth === 0
-}
-
+// Wrapper function to track operation counts and handle errors
 function interact(fragmentA, fragmentB) {
-  const maxValue = Math.pow(2, bitsPerPosition) - 1 // e.g., 255 for 8 bits, 15 for 4 bits
-  
   try {
-    // Reset shared buffer to zeros
-    sharedBuffer.fill(0)
+    const result = sharedInteract(fragmentA, fragmentB, bitsPerPosition)
     
-    // Directly copy fragments into shared program buffer without creating intermediate arrays
-    sharedProgram.set(fragmentA, 0)
-    sharedProgram.set(fragmentB, 64)
-
-    if (!matchingLoops(sharedProgram)) {
-      return { fragments: [fragmentA, fragmentB], opsUsed: 0 }
+    // Track operation usage if in debug mode
+    if (debugMode && result.opsUsed > 0) {
+      // Note: We'd need to modify sharedInteract to return operation details
+      // For now, we'll skip detailed operation tracking in main worker
     }
-
-    let bufferHead = 0
-    let programHead = 0
-    let cursor = 0
-    let opsUsed = 0
-    let loopDepth = 0
-    
-    while (cursor < sharedProgram.length) {
-      const operation = sharedProgram[cursor]
-      if (operation >= 1 && operation <= 10) {
-        opsUsed++
-        
-        // Track operation usage - optimize by pre-computing reverse mapping
-        const opName = operationNameMap.get(operation)
-        if (opName) {
-          operationCounts[opName] = (operationCounts[opName] || 0) + 1
-        }
-        
-        if (opsUsed > operationsCap) {
-          break
-        }
-      }
-
-    const op = sharedProgram[cursor]
-    if (op === 1) { // bufferRight
-        bufferHead = (bufferHead + 1) & 127
-    } else if (op === 2) { // bufferLeft
-        bufferHead = (bufferHead - 1) & 127
-    } else if (op === 3) { // bufferIncrement
-        // Wrap around at maxValue based on bitsPerPosition
-        if (sharedBuffer[bufferHead] === maxValue) {
-          sharedBuffer[bufferHead] = 0
-        } else {
-          sharedBuffer[bufferHead]++
-        }
-    } else if (op === 4) { // bufferDecrement
-        // Wrap around at 0 based on bitsPerPosition
-        if (sharedBuffer[bufferHead] === 0) {
-          sharedBuffer[bufferHead] = maxValue
-        } else {
-          sharedBuffer[bufferHead]--
-        }
-    } else if (op === 5) { // programRight
-        programHead = (programHead + 1) & 127
-    } else if (op === 6) { // programLeft
-        programHead = (programHead - 1) & 127
-    } else if (op === 7) { // programRead
-        // Mask the value to ensure it fits within bitsPerPosition
-        sharedBuffer[bufferHead] = sharedProgram[programHead] & maxValue
-    } else if (op === 8) { // programWrite
-        sharedProgram[programHead] = sharedBuffer[bufferHead]
-    } else if (op === 9) { // loopStart
-        loopDepth++
-        if (sharedBuffer[bufferHead] === 0) {
-          let depth = 1
-          while (depth > 0) {
-            cursor++
-            if (cursor >= sharedProgram.length) {
-              throw new Error('Loop cursor out of bounds')
-            }
-            if (sharedProgram[cursor] === 9) {
-              depth++
-            } else if (sharedProgram[cursor] === 10) {
-              depth--
-            }
-          }
-        }
-    } else if (op === 10) { // loopEnd
-        loopDepth--
-        if (sharedBuffer[bufferHead] !== 0) {
-          let depth = 1
-          while (depth > 0) {
-            cursor--
-            if (cursor < 0) {
-              throw new Error('Loop cursor out of bounds')
-            }
-            if (sharedProgram[cursor] === 9) {
-              depth--
-            } else if (sharedProgram[cursor] === 10) {
-              depth++
-            }
-          }
-        }
-    }
-      cursor++
-    }
-
-    // Create new arrays for the results (fragments are always 64 bytes in the simulation)
-    const result = {
-      fragments: [
-        sharedProgram.slice(0, 64),
-        sharedProgram.slice(64),
-      ],
-      opsUsed: opsUsed
-    }
-    
-    // Track operations for OPI calculation
-    totalOperations += opsUsed
-    epochOperations += opsUsed
     
     return result
-    
   } catch (error) {
+    debugLog('ERROR', 'Interaction failed', { 
+      error: error.message,
+      fragmentALength: fragmentA?.length,
+      fragmentBLength: fragmentB?.length
+    })
     errorCount++
     // Return original fragments on error
     return { fragments: [fragmentA, fragmentB], opsUsed: 0 }
   }
 }
 
-// Fast hash function for fragment arrays
+// Simple hash function for fragments
+function hashFragment(fragment) {
+  let hash = 0
+  for (let i = 0; i < fragment.length; i++) {
+    hash = ((hash << 5) - hash) + fragment[i]
+    hash = hash & hash // Convert to 32-bit integer
+  }
+  return hash
+}
+
+// Hash all fragments for caching
 function hashFragments(fragments) {
   let hash = 0
-  // Sample every 16th fragment for faster hashing
-  for (let i = 0; i < fragments.length; i += 16) {
-    const fragment = fragments[i]
-    // Use first, middle, and last bytes for quick hash
-    hash = ((hash << 5) - hash) + fragment[0] + fragment[32] + fragment[63]
-    hash = hash & hash // Convert to 32bit integer
+  for (let i = 0; i < fragments.length; i++) {
+    const fragHash = hashFragment(fragments[i])
+    hash = ((hash << 5) - hash) + fragHash
+    hash = hash & hash
   }
   return hash
 }
@@ -245,7 +131,7 @@ async function compress(fragments) {
   const ratio = compressed / uncompressed
 
   return {
-    uncompressed: fragments.length * 64, // Extrapolate to full size
+    uncompressed: fragments.length * FRAGMENT_SIZE, // Extrapolate to full size
     compressed: Math.round((compressed / sampleFragments.length) * fragments.length),
     ratio,
     sampled: true,
@@ -271,14 +157,11 @@ let mutationRate = 0.00024 // 0.024%
 // Delta tracking for efficient updates
 let changedFragmentIndices = new Set()
 let lastFullUpdate = 0
-const FULL_UPDATE_INTERVAL = 1000 // Send full update every 1000 interactions
 
 // Compression optimization state
 let compressionCache = new Map() // Cache compression results by fragment hash
 let lastCompressionHash = null
 let compressionInProgress = false
-const COMPRESSION_SAMPLE_SIZE = 64 // Sample 64 fragments instead of all 1024
-const COMPRESSION_CACHE_SIZE = 100 // Keep last 100 compression results
 
 // Debugging state
 let debugMode = false // Start with debug disabled for better performance
@@ -327,76 +210,67 @@ function debugLog(level, message, data = {}) {
 
 // Initialize worker pool
 function initializeWorkerPool() {
+  debugLog('INFO', 'Initializing worker pool', { size: workerPoolSize })
+  
   // Terminate existing workers
   for (const worker of workerPool) {
     worker.terminate()
   }
   workerPool = []
-  pendingBatches.clear()
   
   // Create new workers
   for (let i = 0; i < workerPoolSize; i++) {
-    const worker = new Worker('/interaction-worker.js')
+    const worker = new Worker('./interaction-worker.js')
     
     worker.onmessage = (e) => {
       if (e.data.type === 'batch-complete') {
         handleBatchComplete(e.data)
+      } else if (e.data.type === 'error') {
+        debugLog('ERROR', 'Worker error', { 
+          workerId: i, 
+          error: e.data.error 
+        })
       }
     }
     
     worker.onerror = (error) => {
-      debugLog('ERROR', `Worker ${i} error:`, { error: error.message })
+      debugLog('ERROR', 'Worker crashed', { 
+        workerId: i, 
+        error: error.message 
+      })
     }
     
     workerPool.push(worker)
   }
   
-  debugLog('INFO', 'Worker pool initialized', { poolSize: workerPoolSize })
+  debugLog('INFO', 'Worker pool initialized', { workers: workerPool.length })
 }
 
-// Initialize fragments
-function initializeFragments(count = 1024) {
-  // Ensure even number of fragments for pairing
-  const adjustedCount = count % 2 === 0 ? count : count + 1
-  fragments = Array.from({ length: adjustedCount }, () => randomFragment())
-  interactions = 0
-  totalOperations = 0
-  epochOperations = 0
-  epochInteractions = 0
-  opsPerInteractionHistory = []
-  interactionsPerSecond = 0
-  lastInteractionCount = 0
-  lastInteractionCountTime = Date.now()
+// Initialize fragments with random or specific patterns
+function initializeFragments(count) {
+  debugLog('INFO', 'Initializing fragments', { count, bitsPerPosition })
+  fragments = []
   changedFragmentIndices.clear()
-  lastFullUpdate = 0
-  compressionCache.clear()
-  lastCompressionHash = null
-  compressionInProgress = false
-  currentEpoch = 0
-  epochPairs = []
   
-  // Initialize worker pool when fragments are initialized
-  initializeWorkerPool()
+  for (let i = 0; i < count; i++) {
+    fragments.push(randomFragment())
+  }
   
-  // Log initial fragment statistics for debugging
+  // Add some sample pattern detection for debug
   if (debugMode) {
+    const zeroFragments = fragments.filter(f => f.every(b => b === 0))
+    const maxValue = Math.pow(2, bitsPerPosition) - 1
+    const patternFragments = fragments.filter(f => {
+      const firstByte = f[0]
+      return f.every(b => b === firstByte)
+    })
+    
     let zeroCount = 0
     let patternCount = 0
     
-    for (let i = 0; i < Math.min(10, fragments.length); i++) {
-      const fragment = fragments[i]
-      const isAllZeros = fragment.every(b => b === 0)
-      if (isAllZeros) zeroCount++
-      
-      // Check for simple patterns
-      let isPattern = true
-      for (let j = 1; j < fragment.length; j++) {
-        if (fragment[j] !== fragment[0]) {
-          isPattern = false
-          break
-        }
-      }
-      if (isPattern) patternCount++
+    for (const fragment of fragments) {
+      if (fragment.every(b => b === 0)) zeroCount++
+      else if (fragment.every(b => b === fragment[0])) patternCount++
     }
     
     debugLog('INFO', 'Fragments initialized', {
@@ -423,7 +297,7 @@ function applyMutations() {
   if (mutationRate === 0) return
   
   let mutationCount = 0
-  const totalBytes = fragments.length * 64
+  const totalBytes = fragments.length * FRAGMENT_SIZE
   const expectedMutations = totalBytes * mutationRate
   
   // Apply mutations based on probability
@@ -950,10 +824,10 @@ self.onmessage = function(e) {
         }
         
         // Apply mutations for single interaction (scaled down)
-        if (mutationRate > 0 && Math.random() < mutationRate * 128) {
+        if (mutationRate > 0 && Math.random() < mutationRate * BUFFER_SIZE) {
           // Apply a single mutation somewhere
           const fragmentIndex = Math.floor(Math.random() * fragments.length)
-          const byteIndex = Math.floor(Math.random() * 64)
+          const byteIndex = Math.floor(Math.random() * FRAGMENT_SIZE)
           fragments[fragmentIndex][byteIndex] = Math.floor(Math.random() * Math.pow(2, bitsPerPosition))
           changedFragmentIndices.add(fragmentIndex)
         }
@@ -976,7 +850,7 @@ self.onmessage = function(e) {
         
       case 'inject-fragment':
         try {
-          if (data.fragment && data.fragment.length === 64) {
+          if (data.fragment && data.fragment.length === FRAGMENT_SIZE) {
             // Find a random position to inject the fragment
             const targetIndex = Math.floor(Math.random() * fragments.length)
             fragments[targetIndex] = new Uint8Array(data.fragment)

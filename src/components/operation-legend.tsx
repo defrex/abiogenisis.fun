@@ -1,16 +1,5 @@
 import { Text } from '@/components/ui/text/text'
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  IterationCcwIcon,
-  MinusIcon,
-  PlusIcon,
-  SquareArrowDownIcon,
-  SquareArrowLeftIcon,
-  SquareArrowRightIcon,
-  SquareArrowUpIcon,
-  WifiZeroIcon,
-} from 'lucide-react'
+import { OPERATIONS_LIST, NO_OP_CONFIG } from '@/lib/operation-config'
 
 interface OperationLegendProps {
   title?: string
@@ -21,49 +10,18 @@ export function OperationLegend({ title = 'Operation Reference' }: OperationLege
     <>
       <Text value={title} size="sm" />
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-1 text-xs max-w-[768px]">
+        {OPERATIONS_LIST.map((op) => {
+          const IconComponent = op.icon
+          return (
+            <div key={op.value} className="flex items-center gap-1">
+              <IconComponent className={`h-3 w-3 ${op.color}`} />
+              <span className="text-neutral-400">{op.shortLabel}</span>
+            </div>
+          )
+        })}
         <div className="flex items-center gap-1">
-          <ArrowRightIcon className="h-3 w-3 text-blue-400" />
-          <span className="text-neutral-400">Buf →</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <ArrowLeftIcon className="h-3 w-3 text-blue-400" />
-          <span className="text-neutral-400">Buf ←</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <PlusIcon className="h-3 w-3 text-green-400" />
-          <span className="text-neutral-400">Buf ++</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <MinusIcon className="h-3 w-3 text-red-400" />
-          <span className="text-neutral-400">Buf --</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <SquareArrowRightIcon className="h-3 w-3 text-purple-400" />
-          <span className="text-neutral-400">Prog →</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <SquareArrowLeftIcon className="h-3 w-3 text-purple-400" />
-          <span className="text-neutral-400">Prog ←</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <SquareArrowDownIcon className="h-3 w-3 text-yellow-400" />
-          <span className="text-neutral-400">Read</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <SquareArrowUpIcon className="h-3 w-3 text-yellow-400" />
-          <span className="text-neutral-400">Write</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <IterationCcwIcon className="h-3 w-3 text-orange-400" />
-          <span className="text-neutral-400">Loop [</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <IterationCcwIcon className="h-3 w-3 text-orange-400" />
-          <span className="text-neutral-400">Loop ]</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <WifiZeroIcon className="h-3 w-3 text-neutral-400" />
-          <span className="text-neutral-400">No-op</span>
+          <NO_OP_CONFIG.icon className={`h-3 w-3 ${NO_OP_CONFIG.color}`} />
+          <span className="text-neutral-400">{NO_OP_CONFIG.shortLabel}</span>
         </div>
       </div>
     </>

@@ -1,3 +1,5 @@
+import { OPERATIONS_CAP, BUFFER_SIZE, FRAGMENT_SIZE, getMaxValueForBits } from './constants'
+
 export const operations = {
   bufferRight: 1,
   bufferLeft: 2,
@@ -12,7 +14,6 @@ export const operations = {
 }
 
 const operationSet = new Set(Object.values(operations))
-const operationsCap = 1024 * 2
 
 export interface InteractOptions {
   // Number of bits per position (4, 5, 6, 7, or 8)
@@ -27,18 +28,18 @@ export interface InteractOptions {
  * Return the modified 64 byte arrays.
  */
 export function interact(
-  fragmentA: Uint8Array, 
+  fragmentA: Uint8Array,
   fragmentB: Uint8Array,
-  options: InteractOptions = {}
+  options: InteractOptions = {},
 ): [Uint8Array, Uint8Array] {
   // console.log('interaction start', fragmentA, fragmentB)
 
   const { bitsPerPosition = 8 } = options
   const maxValue = Math.pow(2, bitsPerPosition) - 1 // e.g., 255 for 8 bits, 15 for 4 bits
 
-  const buffer = new Uint8Array(128)
+  const buffer = new Uint8Array(BUFFER_SIZE)
   const program = new Uint8Array(fragmentA.length + fragmentB.length)
-  
+
   // Directly copy fragments into program buffer without creating intermediate arrays
   program.set(fragmentA, 0)
   program.set(fragmentB, fragmentA.length)
@@ -59,7 +60,7 @@ export function interact(
       if (opsUsed % 64 === 0) {
         // console.log(opsUsed, 'ops')
       }
-      if (opsUsed > operationsCap) {
+      if (opsUsed > OPERATIONS_CAP) {
         console.warn('Too many operations used, breaking')
         break
       }

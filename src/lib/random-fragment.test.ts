@@ -3,10 +3,10 @@ import { randomFragment } from './random-fragment'
 describe('randomFragment', () => {
   it('should generate fragments with default 8-bit values (0-255)', () => {
     const fragment = randomFragment()
-    
+
     expect(fragment).toHaveLength(64)
     expect(fragment).toBeInstanceOf(Uint8Array)
-    
+
     // All values should be between 0 and 255
     for (const byte of fragment) {
       expect(byte).toBeGreaterThanOrEqual(0)
@@ -54,7 +54,7 @@ describe('randomFragment', () => {
   it('should produce reasonable distribution over many samples', () => {
     const samples = 1000
     const counts = new Map<number, number>()
-    
+
     // Generate many fragments with 4 bits (0-15)
     for (let i = 0; i < samples; i++) {
       const fragment = randomFragment({ bitsPerPosition: 4 })
@@ -62,10 +62,10 @@ describe('randomFragment', () => {
         counts.set(byte, (counts.get(byte) || 0) + 1)
       }
     }
-    
+
     // Check that we've seen all possible values
     expect(counts.size).toBe(16) // Should have seen all values 0-15
-    
+
     // Check for reasonable distribution (each value should appear at least once)
     for (let i = 0; i < 16; i++) {
       expect(counts.get(i)).toBeGreaterThan(0)
