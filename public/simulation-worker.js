@@ -3,8 +3,14 @@
 
 // Utility functions
 
+// Configuration for random fragment generation
+let bitsPerPosition = 8 // Default to 8 bits (256 values)
+
 function randomFragment() {
-  return new Uint8Array(64).map(() => Math.floor(Math.random() * 256))
+  const maxValue = Math.pow(2, bitsPerPosition)
+  
+  // Uniform distribution over all possible values based on bitsPerPosition
+  return new Uint8Array(64).map(() => Math.floor(Math.random() * maxValue))
 }
 
 // Copy of operations and interact function from interact.ts
@@ -49,6 +55,8 @@ function matchingLoops(program) {
 }
 
 function interact(fragmentA, fragmentB) {
+  const maxValue = Math.pow(2, bitsPerPosition) - 1 // e.g., 255 for 8 bits, 15 for 4 bits
+  
   try {
     // Reset shared buffer to zeros
     sharedBuffer.fill(0)
@@ -58,7 +66,7 @@ function interact(fragmentA, fragmentB) {
     sharedProgram.set(fragmentB, 64)
 
     if (!matchingLoops(sharedProgram)) {
-      return [fragmentA, fragmentB]
+      return { fragments: [fragmentA, fragmentB], opsUsed: 0 }
     }
 
     let bufferHead = 0
@@ -89,15 +97,26 @@ function interact(fragmentA, fragmentB) {
     } else if (op === 2) { // bufferLeft
         bufferHead = (bufferHead - 1) & 127
     } else if (op === 3) { // bufferIncrement
-        sharedBuffer[bufferHead]++
+        // Wrap around at maxValue based on bitsPerPosition
+        if (sharedBuffer[bufferHead] === maxValue) {
+          sharedBuffer[bufferHead] = 0
+        } else {
+          sharedBuffer[bufferHead]++
+        }
     } else if (op === 4) { // bufferDecrement
-        sharedBuffer[bufferHead]--
+        // Wrap around at 0 based on bitsPerPosition
+        if (sharedBuffer[bufferHead] === 0) {
+          sharedBuffer[bufferHead] = maxValue
+        } else {
+          sharedBuffer[bufferHead]--
+        }
     } else if (op === 5) { // programRight
         programHead = (programHead + 1) & 127
     } else if (op === 6) { // programLeft
         programHead = (programHead - 1) & 127
     } else if (op === 7) { // programRead
-        sharedBuffer[bufferHead] = sharedProgram[programHead]
+        // Mask the value to ensure it fits within bitsPerPosition
+        sharedBuffer[bufferHead] = sharedProgram[programHead] & maxValue
     } else if (op === 8) { // programWrite
         sharedProgram[programHead] = sharedBuffer[bufferHead]
     } else if (op === 9) { // loopStart
@@ -137,20 +156,24 @@ function interact(fragmentA, fragmentB) {
     }
 
     // Create new arrays for the results (fragments are always 64 bytes in the simulation)
-    const result = [
-      sharedProgram.slice(0, 64),
-      sharedProgram.slice(64),
-    ]
+    const result = {
+      fragments: [
+        sharedProgram.slice(0, 64),
+        sharedProgram.slice(64),
+      ],
+      opsUsed: opsUsed
+    }
     
     // Track operations for OPI calculation
     totalOperations += opsUsed
+    epochOperations += opsUsed
     
     return result
     
   } catch (error) {
     errorCount++
     // Return original fragments on error
-    return [fragmentA, fragmentB]
+    return { fragments: [fragmentA, fragmentB], opsUsed: 0 }
   }
 }
 
@@ -273,6 +296,8 @@ let lastInteractionCountTime = Date.now()
 
 // OPI tracking state
 let totalOperations = 0
+let epochOperations = 0  // Track operations for current epoch
+let epochInteractions = 0  // Track interactions for current epoch
 let opsPerInteractionHistory = []
 
 // Epoch tracking
@@ -336,6 +361,8 @@ function initializeFragments(count = 1024) {
   fragments = Array.from({ length: adjustedCount }, () => randomFragment())
   interactions = 0
   totalOperations = 0
+  epochOperations = 0
+  epochInteractions = 0
   opsPerInteractionHistory = []
   interactionsPerSecond = 0
   lastInteractionCount = 0
@@ -405,7 +432,7 @@ function applyMutations() {
     for (let j = 0; j < fragment.length; j++) {
       if (Math.random() < mutationRate) {
         // Mutate to a random byte value
-        fragment[j] = Math.floor(Math.random() * 256)
+        fragment[j] = Math.floor(Math.random() * Math.pow(2, bitsPerPosition))
         changedFragmentIndices.add(i)
         mutationCount++
       }
@@ -444,6 +471,8 @@ function handleBatchComplete(data) {
   // Update statistics
   interactions += results.length
   totalOperations += totalOps
+  epochOperations += totalOps
+  epochInteractions += results.length
   
   // Remove from pending
   pendingBatches.delete(id)
@@ -472,6 +501,9 @@ function createEpochPairs() {
   }
   
   currentEpoch++
+  // Reset epoch counters for new epoch
+  epochOperations = 0
+  epochInteractions = 0
   debugLog('INFO', 'New epoch started', { 
     epoch: currentEpoch, 
     pairCount: epochPairs.length,
@@ -524,13 +556,20 @@ async function processEpochParallel() {
       type: 'process-batch',
       id: batchId,
       pairs,
-      fragments: fragmentsArray
+      fragments: fragmentsArray,
+      bitsPerPosition
     })
   }
   
   // Wait for all batches to complete
-  while (pendingBatches.size > 0) {
+  while (pendingBatches.size > 0 && !shouldStop) {
     await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  
+  // If we're stopping, clear pending batches
+  if (shouldStop) {
+    pendingBatches.clear()
+    return
   }
   
   // Apply mutations after all interactions complete
@@ -546,22 +585,26 @@ async function processEpochParallel() {
       })
     }
     
-    // Calculate OPI after each epoch
-    const currentOPI = interactions > 0 ? totalOperations / interactions : 0
-    opsPerInteractionHistory.push([interactions, currentOPI])
+    // Calculate per-epoch OPI
+    const epochOPI = epochInteractions > 0 ? epochOperations / epochInteractions : 0
+    opsPerInteractionHistory.push([interactions, epochOPI])
     
     self.postMessage({
       type: 'opi',
       interactions,
-      opi: currentOPI,
-      totalOperations
+      opi: epochOPI,
+      totalOperations,
+      epochOperations,
+      epochInteractions
     })
     
-    debugLog('INFO', 'OPI calculated at epoch end', { 
+    debugLog('INFO', 'Per-epoch OPI calculated', { 
       epoch: currentEpoch,
-      interactions,
-      currentOPI,
-      totalOperations
+      totalInteractions: interactions,
+      epochInteractions,
+      epochOperations,
+      epochOPI: epochOPI.toFixed(2),
+      cumulativeOPI: (totalOperations / interactions).toFixed(2)
     })
     
     // Trigger compression calculation after each epoch
@@ -649,6 +692,9 @@ async function runSimulation() {
       
       // Process epoch in parallel
       await processEpochParallel()
+      
+      // Check if we should stop after processing
+      if (shouldStop) break
       
       // Calculate interactions per second
       const currentTime = Date.now()
@@ -771,6 +817,36 @@ self.onmessage = function(e) {
     switch (type) {
       case 'initialize':
         try {
+          // Stop any running simulation first
+          shouldStop = true
+          isRunning = false
+          
+          // Reset all state variables
+          interactions = 0
+          totalOperations = 0
+          epochOperations = 0
+          epochInteractions = 0
+          currentEpoch = 0
+          operationsPerInteractionHistory = []
+          interactionsPerSecond = 0
+          lastInteractionCount = 0
+          lastInteractionCountTime = Date.now()
+          changedFragmentIndices.clear()
+          lastFullUpdate = 0
+          compressionCache.clear()
+          lastCompressionHash = null
+          compressionInProgress = false
+          operationCounts = {}
+          errorCount = 0
+          epochPairs = []
+          pendingBatches.clear()
+          
+          // Terminate existing worker pool
+          if (workerPool.length > 0) {
+            workerPool.forEach(worker => worker.terminate())
+            workerPool = []
+          }
+          
           // Test basic communication first
           debugLog('INFO', 'Testing basic communication')
           self.postMessage({ type: 'test', message: 'Worker is alive' })
@@ -778,6 +854,10 @@ self.onmessage = function(e) {
           const fragmentCount = data.fragmentCount || 1024
           workerPoolSize = data.workerPoolSize || 4
           mutationRate = data.mutationRate !== undefined ? data.mutationRate : 0.00024
+          bitsPerPosition = data.bitsPerPosition || 8
+          
+          // Reinitialize worker pool
+          initializeWorkerPool()
           
           initializeFragments(fragmentCount)
           debugLog('INFO', 'Fragments initialized', { 
@@ -834,26 +914,39 @@ self.onmessage = function(e) {
           const [indexA, indexB] = pair
           const result = interact(fragments[indexA], fragments[indexB])
           
-          fragments[indexA] = result[0]
-          fragments[indexB] = result[1]
+          fragments[indexA] = result.fragments[0]
+          fragments[indexB] = result.fragments[1]
           changedFragmentIndices.add(indexA)
           changedFragmentIndices.add(indexB)
           interactions++
+          epochInteractions++
           
-          // Track operations
-          const fragmentA = fragments[indexA]
-          const fragmentB = fragments[indexB]
-          const combined = new Uint8Array(128)
-          combined.set(fragmentA, 0)
-          combined.set(fragmentB, 64)
+          // The interact function now returns opsUsed directly
+          // No need to count operations in the result fragments
+        }
+        
+        // Check if epoch is complete after single interaction
+        if (epochPairs.length === 0) {
+          // Calculate per-epoch OPI before starting new epoch
+          const epochOPI = epochInteractions > 0 ? epochOperations / epochInteractions : 0
+          opsPerInteractionHistory.push([interactions, epochOPI])
           
-          let opsUsed = 0
-          for (let i = 0; i < combined.length; i++) {
-            if (operationSet.has(combined[i])) {
-              opsUsed++
-            }
-          }
-          totalOperations += opsUsed
+          self.postMessage({
+            type: 'opi',
+            interactions,
+            opi: epochOPI,
+            totalOperations,
+            epochOperations,
+            epochInteractions
+          })
+          
+          debugLog('INFO', 'Per-epoch OPI calculated (single interaction)', { 
+            epoch: currentEpoch,
+            totalInteractions: interactions,
+            epochInteractions,
+            epochOperations,
+            epochOPI: epochOPI.toFixed(2)
+          })
         }
         
         // Apply mutations for single interaction (scaled down)
@@ -861,7 +954,7 @@ self.onmessage = function(e) {
           // Apply a single mutation somewhere
           const fragmentIndex = Math.floor(Math.random() * fragments.length)
           const byteIndex = Math.floor(Math.random() * 64)
-          fragments[fragmentIndex][byteIndex] = Math.floor(Math.random() * 256)
+          fragments[fragmentIndex][byteIndex] = Math.floor(Math.random() * Math.pow(2, bitsPerPosition))
           changedFragmentIndices.add(fragmentIndex)
         }
         

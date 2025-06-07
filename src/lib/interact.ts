@@ -14,13 +14,27 @@ export const operations = {
 const operationSet = new Set(Object.values(operations))
 const operationsCap = 1024 * 2
 
+export interface InteractOptions {
+  // Number of bits per position (4, 5, 6, 7, or 8)
+  // This determines the maximum value for buffer values: 2^bitsPerPosition - 1
+  // Default is 8 (256 possible values, 0-255)
+  bitsPerPosition?: 4 | 5 | 6 | 7 | 8
+}
+
 /**
  * Concatenate two 64 byte arrays and run then as a simple self-modifying Turing machine.
  *
  * Return the modified 64 byte arrays.
  */
-export function interact(fragmentA: Uint8Array, fragmentB: Uint8Array): [Uint8Array, Uint8Array] {
+export function interact(
+  fragmentA: Uint8Array, 
+  fragmentB: Uint8Array,
+  options: InteractOptions = {}
+): [Uint8Array, Uint8Array] {
   // console.log('interaction start', fragmentA, fragmentB)
+
+  const { bitsPerPosition = 8 } = options
+  const maxValue = Math.pow(2, bitsPerPosition) - 1 // e.g., 255 for 8 bits, 15 for 4 bits
 
   const buffer = new Uint8Array(128)
   const program = new Uint8Array(fragmentA.length + fragmentB.length)
@@ -65,10 +79,20 @@ export function interact(fragmentA: Uint8Array, fragmentB: Uint8Array): [Uint8Ar
         }
         break
       case operations.bufferIncrement:
-        buffer[bufferHead]++
+        // Wrap around at maxValue based on bitsPerPosition
+        if (buffer[bufferHead] === maxValue) {
+          buffer[bufferHead] = 0
+        } else {
+          buffer[bufferHead]++
+        }
         break
       case operations.bufferDecrement:
-        buffer[bufferHead]--
+        // Wrap around at 0 based on bitsPerPosition
+        if (buffer[bufferHead] === 0) {
+          buffer[bufferHead] = maxValue
+        } else {
+          buffer[bufferHead]--
+        }
         break
       case operations.programRight:
         programHead++
@@ -83,7 +107,8 @@ export function interact(fragmentA: Uint8Array, fragmentB: Uint8Array): [Uint8Ar
         }
         break
       case operations.programRead:
-        buffer[bufferHead] = program[programHead]
+        // Mask the value to ensure it fits within bitsPerPosition
+        buffer[bufferHead] = program[programHead] & maxValue
         break
       case operations.programWrite:
         program[programHead] = buffer[bufferHead]

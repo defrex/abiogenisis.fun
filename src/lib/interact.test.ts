@@ -32,7 +32,36 @@ describe('Turing Machine interact function', () => {
     const [modifiedA, modifiedB] = interact(fragmentA, fragmentB)
 
     expect(modifiedA).toEqual(fragmentA)
-    expect(modifiedB[0]).toBe(255)
+    expect(modifiedB[0]).toBe(255) // Default is 8 bits, so wraps to 255
+  })
+
+  it('should respect bitsPerPosition for increment/decrement wrapping', () => {
+    const fragmentA = new Uint8Array([
+      operations.bufferDecrement, // 0 -> maxValue
+      operations.programLeft,     // Move to fragmentB
+      operations.programWrite,    // Write maxValue to fragmentB[0]
+    ])
+    const fragmentB = new Uint8Array(1)
+
+    // Test with 4 bits (max value 15)
+    const [modifiedA4, modifiedB4] = interact(fragmentA, fragmentB, { bitsPerPosition: 4 })
+    expect(modifiedB4[0]).toBe(15)
+
+    // Test with 5 bits (max value 31)
+    const [modifiedA5, modifiedB5] = interact(fragmentA, fragmentB, { bitsPerPosition: 5 })
+    expect(modifiedB5[0]).toBe(31)
+
+    // Test with 6 bits (max value 63)
+    const [modifiedA6, modifiedB6] = interact(fragmentA, fragmentB, { bitsPerPosition: 6 })
+    expect(modifiedB6[0]).toBe(63)
+
+    // Test with 7 bits (max value 127)
+    const [modifiedA7, modifiedB7] = interact(fragmentA, fragmentB, { bitsPerPosition: 7 })
+    expect(modifiedB7[0]).toBe(127)
+
+    // Test with 8 bits (max value 255) - default
+    const [modifiedA8, modifiedB8] = interact(fragmentA, fragmentB, { bitsPerPosition: 8 })
+    expect(modifiedB8[0]).toBe(255)
   })
 
   it('should read from the program and write to buffer', () => {
@@ -48,6 +77,36 @@ describe('Turing Machine interact function', () => {
 
     expect(modifiedA[0]).toBe(42)
     expect(modifiedB[0]).toBe(42)
+  })
+
+  it('should mask programRead values according to bitsPerPosition', () => {
+    const fragmentA = new Uint8Array([
+      operations.programLeft,     // Move to fragmentB[0]
+      operations.programRead,     // Read value 255 from fragmentB[0]
+      operations.programRight,    // Move back to fragmentA[0]
+      operations.programWrite,    // Write masked value to fragmentA[0]
+    ])
+    const fragmentB = new Uint8Array([255]) // Maximum 8-bit value
+
+    // Test with 4 bits - should mask to 15
+    const [modifiedA4, modifiedB4] = interact(fragmentA, fragmentB, { bitsPerPosition: 4 })
+    expect(modifiedA4[0]).toBe(15)
+
+    // Test with 5 bits - should mask to 31
+    const [modifiedA5, modifiedB5] = interact(fragmentA, fragmentB, { bitsPerPosition: 5 })
+    expect(modifiedA5[0]).toBe(31)
+
+    // Test with 6 bits - should mask to 63
+    const [modifiedA6, modifiedB6] = interact(fragmentA, fragmentB, { bitsPerPosition: 6 })
+    expect(modifiedA6[0]).toBe(63)
+
+    // Test with 7 bits - should mask to 127
+    const [modifiedA7, modifiedB7] = interact(fragmentA, fragmentB, { bitsPerPosition: 7 })
+    expect(modifiedA7[0]).toBe(127)
+
+    // Test with 8 bits - no masking needed
+    const [modifiedA8, modifiedB8] = interact(fragmentA, fragmentB, { bitsPerPosition: 8 })
+    expect(modifiedA8[0]).toBe(255)
   })
 
   it('should skip over a loop if the buffer is 0', () => {

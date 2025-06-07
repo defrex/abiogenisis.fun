@@ -5,10 +5,11 @@ import * as echarts from 'echarts'
 
 interface OpiChartProps {
   data: Array<[number, number]> // [interactions, opi]
+  weightedData?: Array<[number, number]> // [interactions, weighted opi]
   className?: string
 }
 
-export function OpiChart({ data, className }: OpiChartProps) {
+export function OpiChart({ data, weightedData, className }: OpiChartProps) {
   const chartRef = useRef<HTMLDivElement>(null)
   const chartInstance = useRef<echarts.ECharts | null>(null)
 
@@ -23,14 +24,18 @@ export function OpiChart({ data, className }: OpiChartProps) {
     const chart = chartInstance.current
 
     // Prepare data for ECharts
-    const chartData = data.map(([interactions, opi]) => [interactions, opi])
+    const weightedChartData = weightedData || []
 
     const option: echarts.EChartsOption = {
       backgroundColor: 'transparent',
+      legend: {
+        show: false,
+      },
       grid: {
         left: '3%',
         right: '4%',
         bottom: '15%',
+        top: '15%',
         containLabel: true,
       },
       xAxis: {
@@ -72,8 +77,8 @@ export function OpiChart({ data, className }: OpiChartProps) {
       series: [
         {
           name: 'Operations Per Interaction',
-          type: 'line',
-          data: chartData,
+          type: 'line' as const,
+          data: weightedChartData,
           lineStyle: {
             color: '#10b981',
             width: 2,
@@ -82,7 +87,7 @@ export function OpiChart({ data, className }: OpiChartProps) {
             color: '#10b981',
           },
           symbol: 'circle',
-          symbolSize: 4,
+          symbolSize: 3,
           smooth: true,
         },
       ],
@@ -96,7 +101,7 @@ export function OpiChart({ data, className }: OpiChartProps) {
         formatter: (params: any) => {
           if (Array.isArray(params) && params.length > 0) {
             const point = params[0]
-            return `Interactions: ${point.data[0]}<br/>Ops/Interaction: ${point.data[1].toFixed(1)}`
+            return `Interactions: ${point.data[0]}<br/>OPI: ${point.data[1].toFixed(1)}`
           }
           return ''
         },
@@ -114,7 +119,7 @@ export function OpiChart({ data, className }: OpiChartProps) {
     return () => {
       window.removeEventListener('resize', handleResize)
     }
-  }, [data])
+  }, [data, weightedData])
 
   // Cleanup on unmount
   useEffect(() => {

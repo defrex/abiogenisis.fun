@@ -53,7 +53,7 @@ export function VirtualFragmentList({ fragments }: VirtualFragmentListProps) {
             right: 0,
           }}
         >
-          <Stack gap={2}>
+          <Stack gap={2} className="pb-6">
             {visibleFragments.map((fragment, index) => (
               <div
                 key={startIndex + index}

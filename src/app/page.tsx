@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils/cn'
 import { formatNumber } from '@/lib/utils/format-number'
 import { validateFragmentCount } from '@/lib/utils/validate-fragment-count'
 import { Bug, Circle, MinusIcon, Pause, Play, PlusIcon, Square } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 export default function Home() {
   const [interactions, setInteractions] = useState<number | null>(null)
@@ -25,6 +25,7 @@ export default function Home() {
   const [operationsPerInteraction, setOperationsPerInteraction] = useState<Array<[number, number]>>(
     [],
   )
+  const [weightedOPI, setWeightedOPI] = useState<number>(0)
   const [playing, setPlaying] = useState(false)
   const [debugLogs, setDebugLogs] = useState<string[]>([])
   const [debugEnabled, setDebugEnabled] = useState<boolean>(false)
@@ -34,6 +35,7 @@ export default function Home() {
   )
   const [workerPoolSize, setWorkerPoolSize] = useState<number>(6)
   const [mutationRate, setMutationRate] = useState<number>(0.00024) // 0.024% default from paper
+  const [bitsPerPosition, setBitsPerPosition] = useState<4 | 5 | 6 | 7 | 8>(6) // default to 8 bits (256 values)
   const [currentEpoch, setCurrentEpoch] = useState<number>(0)
   const [workerStatus, setWorkerStatus] = useState<
     'initializing' | 'running' | 'stopped' | 'error'
@@ -42,6 +44,31 @@ export default function Home() {
   const workerRef = useRef<Worker | null>(null)
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null)
   const debugEnabledRef = useRef<boolean>(false)
+
+  // Calculate weighted average OPI using exponential decay
+  const calculateWeightedOPI = useCallback((opiHistory: Array<[number, number]>) => {
+    if (opiHistory.length === 0) return 0
+    
+    const decayConstant = 64 / 3 // ~21.3, gives exp(-3) ≈ 0.05 at 64 epochs ago
+    let weightedSum = 0
+    let totalWeight = 0
+    
+    // Process from most recent to oldest
+    const currentEpochIndex = opiHistory.length - 1
+    
+    for (let i = currentEpochIndex; i >= 0; i--) {
+      const epochsAgo = currentEpochIndex - i
+      const weight = Math.exp(-epochsAgo / decayConstant)
+      
+      // Only include epochs with meaningful weight (> 0.01)
+      if (weight > 0.01) {
+        weightedSum += opiHistory[i][1] * weight
+        totalWeight += weight
+      }
+    }
+    
+    return totalWeight > 0 ? weightedSum / totalWeight : 0
+  }, [])
 
   // Initialize worker and simulation
   useEffect(() => {
@@ -122,12 +149,13 @@ export default function Home() {
         setDebugLogs((prev) => [...prev, `[ERROR] Worker error: ${error.message}`])
       }
 
-      // Initialize the simulation with fragment count, worker pool size, and mutation rate
+      // Initialize the simulation with fragment count, worker pool size, mutation rate, and bitsPerPosition
       workerRef.current.postMessage({
         type: 'initialize',
         fragmentCount,
         workerPoolSize,
         mutationRate,
+        bitsPerPosition,
       })
     }
 
@@ -136,7 +164,7 @@ export default function Home() {
         workerRef.current.terminate()
       }
     }
-  }, [fragmentCount, workerPoolSize, mutationRate])
+  }, [fragmentCount, workerPoolSize, mutationRate, bitsPerPosition, calculateWeightedOPI])
 
   // Separate effect for heartbeat monitoring
   useEffect(() => {
@@ -189,15 +217,21 @@ export default function Home() {
     setCompressionRatio([])
     setOperationsPerInteraction([])
     setCurrentEpoch(0)
+    setWeightedOPI(0)
+    setInteractions(null)
+    setInteractionsPerSecond(0)
 
-    // Reinitialize the simulation with fragment count, worker pool size, and mutation rate
-    workerRef.current.postMessage({
-      type: 'initialize',
-      fragmentCount,
-      workerPoolSize,
-      mutationRate,
-    })
-  }, [fragmentCount, workerPoolSize, mutationRate])
+    // Give the worker a moment to stop, then reinitialize
+    setTimeout(() => {
+      workerRef.current?.postMessage({
+        type: 'initialize',
+        fragmentCount,
+        workerPoolSize,
+        mutationRate,
+        bitsPerPosition,
+      })
+    }, 100)
+  }, [fragmentCount, workerPoolSize, mutationRate, bitsPerPosition])
 
   const handleInjectFragment = useCallback((fragment: Uint8Array) => {
     if (!workerRef.current) return
@@ -207,6 +241,89 @@ export default function Home() {
       fragment: Array.from(fragment),
     })
   }, [])
+
+  // Calculate weighted average OPI with exponential decay
+  const getWeightedOPI = useCallback(() => {
+    if (operationsPerInteraction.length === 0) return 0
+    
+    // Use exponential decay: weight = exp(-n / decayConstant)
+    // Increased decay constant for smoother averaging
+    // decayConstant = 64 gives ~37% weight at 64 epochs ago (vs ~5% before)
+    const decayConstant = 64
+    let weightedSum = 0
+    let totalWeight = 0
+    
+    // Consider more history for stability (up to 128 epochs)
+    const dataPoints = operationsPerInteraction.slice(-128)
+    const numPoints = dataPoints.length
+    
+    // Apply double smoothing: first exponential weights, then moving average
+    const smoothingWindow = Math.min(5, numPoints)
+    
+    for (let i = 0; i < numPoints; i++) {
+      const epochsAgo = numPoints - 1 - i
+      const weight = Math.exp(-epochsAgo / decayConstant)
+      
+      // Apply local averaging for extra smoothing
+      let localSum = 0
+      let localCount = 0
+      for (let j = Math.max(0, i - Math.floor(smoothingWindow/2)); 
+           j <= Math.min(numPoints - 1, i + Math.floor(smoothingWindow/2)); 
+           j++) {
+        localSum += dataPoints[j][1]
+        localCount++
+      }
+      const smoothedValue = localCount > 0 ? localSum / localCount : dataPoints[i][1]
+      
+      weightedSum += smoothedValue * weight
+      totalWeight += weight
+    }
+    
+    return totalWeight > 0 ? weightedSum / totalWeight : 0
+  }, [operationsPerInteraction])
+
+  // Update weighted OPI state when operations data changes
+  useEffect(() => {
+    setWeightedOPI(getWeightedOPI())
+  }, [getWeightedOPI])
+
+  // Calculate weighted OPI history for chart
+  const weightedOPIHistory = useMemo(() => {
+    const result: Array<[number, number]> = []
+    const decayConstant = 64
+    const smoothingWindow = 5
+    
+    for (let i = 0; i < operationsPerInteraction.length; i++) {
+      const startIdx = Math.max(0, i - 127) // Consider up to 128 epochs back
+      let weightedSum = 0
+      let totalWeight = 0
+      
+      for (let j = startIdx; j <= i; j++) {
+        const epochsAgo = i - j
+        const weight = Math.exp(-epochsAgo / decayConstant)
+        
+        // Apply local averaging for the historical data point
+        let localSum = 0
+        let localCount = 0
+        const halfWindow = Math.floor(smoothingWindow / 2)
+        for (let k = Math.max(0, j - halfWindow); 
+             k <= Math.min(operationsPerInteraction.length - 1, j + halfWindow); 
+             k++) {
+          localSum += operationsPerInteraction[k][1]
+          localCount++
+        }
+        const smoothedValue = localCount > 0 ? localSum / localCount : operationsPerInteraction[j][1]
+        
+        weightedSum += smoothedValue * weight
+        totalWeight += weight
+      }
+      
+      const weightedOpi = totalWeight > 0 ? weightedSum / totalWeight : 0
+      result.push([operationsPerInteraction[i][0], weightedOpi])
+    }
+    
+    return result
+  }, [operationsPerInteraction])
 
   return (
     <main className="h-screen flex">
@@ -422,6 +539,36 @@ export default function Home() {
                   </div>
                 </div>
               </div>
+
+              {/* Bits Per Position Control */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Text value="Bits Per Position" color="light" size="sm" />
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={bitsPerPosition}
+                      onChange={(e) =>
+                        setBitsPerPosition(parseInt(e.target.value) as 4 | 5 | 6 | 7 | 8)
+                      }
+                      disabled={
+                        workerStatus === 'running' ||
+                        (workerStatus === 'stopped' && interactions !== null && interactions > 0)
+                      }
+                      className={cn(
+                        'px-2 py-1 text-sm bg-neutral-800 border border-neutral-700 rounded',
+                        'focus:outline-none focus:border-neutral-600',
+                        'disabled:opacity-50 disabled:cursor-not-allowed',
+                      )}
+                    >
+                      <option value="4">4 bits (16 values)</option>
+                      <option value="5">5 bits (32 values)</option>
+                      <option value="6">6 bits (64 values)</option>
+                      <option value="7">7 bits (128 values)</option>
+                      <option value="8">8 bits (256 values)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
             </Stack>
 
             {/* Statistics */}
@@ -452,8 +599,8 @@ export default function Home() {
                 <Text value="Operations/Interaction" color="light" size="sm" />
                 <Text
                   value={
-                    operationsPerInteraction.length > 0
-                      ? operationsPerInteraction[operationsPerInteraction.length - 1][1].toFixed(1)
+                    weightedOPI > 0
+                      ? weightedOPI.toFixed(1)
                       : '—'
                   }
                   size="sm"
@@ -543,7 +690,11 @@ export default function Home() {
                   </div>
                   <div className="flex-1">
                     <Text value="Operations Per Interaction" size="lg" />
-                    <OpiChart data={operationsPerInteraction} className="h-full" />
+                    <OpiChart 
+                      data={operationsPerInteraction} 
+                      weightedData={weightedOPIHistory}
+                      className="h-full" 
+                    />
                   </div>
                 </div>
               ),
@@ -571,7 +722,10 @@ export default function Home() {
                     <OperationLegend />
                   </div>
                   <div className="flex-1 overflow-y-auto">
-                    <FragmentCreator onInject={handleInjectFragment} />
+                    <FragmentCreator
+                      onInject={handleInjectFragment}
+                      bitsPerPosition={bitsPerPosition}
+                    />
                   </div>
                 </div>
               ),

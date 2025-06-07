@@ -53,6 +53,7 @@ interface SavedFragment {
 
 interface FragmentCreatorProps {
   onInject: (fragment: Uint8Array) => void
+  bitsPerPosition?: 4 | 5 | 6 | 7 | 8
 }
 
 interface FragmentCardProps {
@@ -110,7 +111,7 @@ function FragmentCard({ fragment, isLoaded = false, onLoad, onDelete }: Fragment
   )
 }
 
-export function FragmentCreator({ onInject }: FragmentCreatorProps) {
+export function FragmentCreator({ onInject, bitsPerPosition = 8 }: FragmentCreatorProps) {
   const [bytes, setBytes] = useState<number[]>(new Array(64).fill(255))
   const [savedFragments, setSavedFragments] = useState<SavedFragment[]>([])
   const [fragmentName, setFragmentName] = useState('')
@@ -199,7 +200,11 @@ export function FragmentCreator({ onInject }: FragmentCreatorProps) {
 
   const runTest = () => {
     // Always generate new random bytes for the test partner
-    const partnerBytes = new Array(64).fill(0).map(() => Math.floor(Math.random() * 256))
+    const maxValue = Math.pow(2, bitsPerPosition)
+    const partnerBytes = new Array(64).fill(0).map(() => {
+      // Uniform distribution over all possible values based on bitsPerPosition
+      return Math.floor(Math.random() * maxValue)
+    })
     setTestPartnerBytes(partnerBytes)
 
     setIsTestRunning(true)
@@ -209,7 +214,7 @@ export function FragmentCreator({ onInject }: FragmentCreatorProps) {
     const fragmentB = new Uint8Array(partnerBytes)
 
     try {
-      const [resultA, resultB] = interact(fragmentA, fragmentB)
+      const [resultA, resultB] = interact(fragmentA, fragmentB, { bitsPerPosition })
       setTestResult({
         fragmentA: Array.from(resultA),
         fragmentB: Array.from(resultB),

@@ -36,7 +36,9 @@ function matchingLoops(program) {
   return depth === 0
 }
 
-function interact(fragmentA, fragmentB) {
+function interact(fragmentA, fragmentB, bitsPerPosition = 8) {
+  const maxValue = Math.pow(2, bitsPerPosition) - 1 // e.g., 255 for 8 bits, 15 for 4 bits
+  
   try {
     // Reset shared buffer to zeros
     sharedBuffer.fill(0)
@@ -75,15 +77,26 @@ function interact(fragmentA, fragmentB) {
       } else if (op === 2) { // bufferLeft
         bufferHead = (bufferHead - 1) & 127
       } else if (op === 3) { // bufferIncrement
-        sharedBuffer[bufferHead]++
+        // Wrap around at maxValue based on bitsPerPosition
+        if (sharedBuffer[bufferHead] === maxValue) {
+          sharedBuffer[bufferHead] = 0
+        } else {
+          sharedBuffer[bufferHead]++
+        }
       } else if (op === 4) { // bufferDecrement
-        sharedBuffer[bufferHead]--
+        // Wrap around at 0 based on bitsPerPosition
+        if (sharedBuffer[bufferHead] === 0) {
+          sharedBuffer[bufferHead] = maxValue
+        } else {
+          sharedBuffer[bufferHead]--
+        }
       } else if (op === 5) { // programRight
         programHead = (programHead + 1) & 127
       } else if (op === 6) { // programLeft
         programHead = (programHead - 1) & 127
       } else if (op === 7) { // programRead
-        sharedBuffer[bufferHead] = sharedProgram[programHead]
+        // Mask the value to ensure it fits within bitsPerPosition
+        sharedBuffer[bufferHead] = sharedProgram[programHead] & maxValue
       } else if (op === 8) { // programWrite
         sharedProgram[programHead] = sharedBuffer[bufferHead]
       } else if (op === 9) { // loopStart
@@ -143,7 +156,7 @@ function interact(fragmentA, fragmentB) {
 }
 
 // Process a batch of fragment pairs
-function processBatch(pairs, fragments) {
+function processBatch(pairs, fragments, bitsPerPosition = 8) {
   const results = []
   let totalOps = 0
   let errorCount = 0
@@ -152,7 +165,7 @@ function processBatch(pairs, fragments) {
     const fragmentA = new Uint8Array(fragments[indexA])
     const fragmentB = new Uint8Array(fragments[indexB])
     
-    const result = interact(fragmentA, fragmentB)
+    const result = interact(fragmentA, fragmentB, bitsPerPosition)
     
     totalOps += result.opsUsed
     if (result.error) {
@@ -178,14 +191,14 @@ function processBatch(pairs, fragments) {
 
 // Message handler
 self.onmessage = function(e) {
-  const { type, id, pairs, fragments } = e.data
+  const { type, id, pairs, fragments, bitsPerPosition = 8 } = e.data
   
   if (type === 'process-batch') {
     // Convert fragments back to Uint8Arrays
     const fragmentArrays = fragments.map(f => new Uint8Array(f))
     
     // Process the batch
-    const result = processBatch(pairs, fragmentArrays)
+    const result = processBatch(pairs, fragmentArrays, bitsPerPosition)
     
     // Send results back
     self.postMessage({
