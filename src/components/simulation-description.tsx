@@ -14,10 +14,18 @@ import {
 } from 'lucide-react'
 
 interface SimulationDescriptionProps {
-  fragmentCount?: number
+  fragmentCount: number
+  mutationRate: number
+  bitsPerPosition: 4 | 5 | 6 | 7 | 8
+  workerPoolSize: number
 }
 
-export function SimulationDescription({ fragmentCount = 1024 }: SimulationDescriptionProps) {
+export function SimulationDescription({
+  fragmentCount,
+  mutationRate,
+  bitsPerPosition,
+  workerPoolSize,
+}: SimulationDescriptionProps) {
   return (
     <div className="p-6 h-full overflow-y-auto">
       <article className="prose prose-invert prose-neutral max-w-[768px]">
@@ -27,7 +35,6 @@ export function SimulationDescription({ fragmentCount = 1024 }: SimulationDescri
           This simulation explores how self-replicating programs can emerge spontaneously from
           simple interactions, without any explicit fitness landscape.
         </p>
-
         <p>
           Based on{' '}
           <a href="https://arxiv.org/abs/2406.19108" target="_blank" rel="noopener noreferrer">
@@ -43,32 +50,25 @@ export function SimulationDescription({ fragmentCount = 1024 }: SimulationDescri
 
         <ul>
           <li>
-            {fragmentCount.toLocaleString()} random, 64-byte programs are initialized, each byte
-            ranging from 0-255.
+            {fragmentCount.toLocaleString()} random 64-byte programs are initialized, each position
+            containing values from 0 to {Math.pow(2, bitsPerPosition) - 1}.
           </li>
           <li>
-            Programs are organized into epochs, ensuring each program interacts exactly once per
-            epoch with a randomly selected partner. Metrics are calculated at the end of each epoch.
+            Each epoch, programs are paired randomly and interact exactly once. Interactions
+            concatenate two programs into a 128-byte program that executes on a Turing machine.
+          </li>
+          <li>Programs can modify themselves through the &quot;Program Write&quot; operation.</li>
+          <li>
+            Random mutations occur with {(mutationRate * 100).toFixed(3)}% probability per byte per
+            epoch. Note that this isn&apos;t necessarily, but it speeds things up.
           </li>
           <li>
-            Interactions occur by concatenating two 64-byte programs into a 128-byte program that
-            executes on a Turing machine with a 128-byte buffer (initialized to zeros).
+            After execution, the modified program is split back into two fragments, replacing the
+            originals.
           </li>
           <li>
-            The key feature: programs can modify themselves during execution through the
-            &quot;Program Write&quot; operation, enabling one fragment to edit the other.
-          </li>
-          <li>
-            Execution is capped at 2,048 operations to prevent infinite loops. Only programs with
-            matching loop brackets execute (safety check).
-          </li>
-          <li>
-            After execution, the 128-byte program is split back into two 64-byte fragments,
-            replacing the originals.
-          </li>
-          <li>
-            Over time, programs that successfully replicate parts of themselves spread through the
-            population, causing measurable changes in compression ratio and computational activity.
+            Over time, successful replicators spread through the population, creating measurable
+            patterns in compression and computational activity.
           </li>
         </ul>
 

@@ -180,7 +180,12 @@ export default function Home() {
             {
               id: 'about',
               label: 'About',
-              content: <SimulationDescription fragmentCount={state.fragmentCount} />,
+              content: <SimulationDescription 
+                fragmentCount={state.fragmentCount}
+                mutationRate={state.mutationRate}
+                bitsPerPosition={state.bitsPerPosition}
+                workerPoolSize={state.workerPoolSize}
+              />,
             },
             {
               id: 'programs',
