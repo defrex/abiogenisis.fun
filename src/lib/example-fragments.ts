@@ -188,9 +188,142 @@ export const PATTERN_GENERATOR: FragmentExample = {
   ),
 }
 
+export const PALINDROMIC_REPLICATOR: FragmentExample = {
+  name: 'Palindromic Replicator',
+  description: 'Inspired by the paper\'s self-replicating palindrome structure',
+  bytes: createFragment(
+    // Simplified but effective palindromic replicator
+    // Sets up a signature value and copies it to the partner
+    
+    // Set up signature value (9) in buffer
+    3, 3, 3, 3, 3, 3, 3, 3, 3, // Buffer[0] = 9
+    
+    // Simple approach: move program pointer 64 times to reach partner
+    // Use a loop with counter 8, moving 8 times per iteration
+    1, // Move to buffer[1]
+    3, 3, 3, 3, 3, 3, 3, 3, // Buffer[1] = 8
+    9, // Loop start
+      5, 5, 5, 5, 5, 5, 5, 5, // Move program right 8 times
+      4, // Decrement buffer[1]
+    10, // Loop end (8 × 8 = 64)
+    
+    // Now at partner fragment position 64
+    2, // Back to buffer[0] (value 9)
+    8, // Write 9 to partner[0]
+    5, 8, // Move right and write 9 to partner[1]
+    5, 8, // Move right and write 9 to partner[2]
+    
+    // Additional writes to ensure detection
+    5, 8, // partner[3]
+    5, 8, // partner[4]
+  ),
+}
+
+export const AGGRESSIVE_REPLICATOR: FragmentExample = {
+  name: 'Aggressive Replicator',
+  description: 'Fast-spreading replicator with minimal overhead',
+  bytes: createFragment(
+    // Highly optimized replicator that spreads quickly
+    
+    // Quick setup: counter in buffer[0]
+    3, 3, 3, 3, // Buffer[0] = 4
+    
+    // Compact movement loop (16 moves per iteration)
+    9, // Loop start
+      5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, // Move 16
+      4, // Decrement
+    10, // Loop end (4 × 16 = 64)
+    
+    // Rapid write sequence
+    3, 3, 3, // Set value
+    8, 5, 8, 5, 8, 5, 8, 5, 8, // Write-move pattern
+    
+    // Self-modification sequence
+    6, 7, 3, 8, // Read, modify, write back
+  ),
+}
+
+export const ZERO_TOLERANT_REPLICATOR: FragmentExample = {
+  name: 'Zero-Tolerant Replicator',
+  description: 'Based on the paper\'s "[<}]" structure that can overwrite zeros',
+  bytes: createFragment(
+    // The paper found that replicators with "[<}]" structure were more robust
+    // because they could overwrite zeros, unlike "[,}<]" replicators
+    
+    // Initialize buffer with non-zero values to ensure robustness
+    3, 3, 3, 3, 3, // Buffer[0] = 5 (signature value)
+    1, 3, 3, 3, // Buffer[1] = 3 (inner counter)
+    1, 3, 3, 3, 3, 3, 3, 3, // Buffer[2] = 7 (outer counter)
+    
+    // Robust navigation loop
+    9, // Outer loop
+      2, // To buffer[1]
+      3, 3, 3, // Reset inner counter to 3
+      9, // Inner loop
+        2, 5, 5, 5, // Back to buffer[0], move program right 3 times
+        1, 4, // To buffer[1], decrement
+      10, // End inner (3 × 3 = 9 moves per outer iteration)
+      1, 4, // To buffer[2], decrement outer
+    10, // End outer (7 × 9 = 63 moves, almost at partner)
+    
+    5, // One more move to reach position 64
+    
+    // Aggressive writing pattern that overwrites zeros
+    2, 2, // To buffer[0] (value 5)
+    8, // Write 5 (non-zero)
+    3, 8, // Increment to 6, write
+    3, 8, // Increment to 7, write
+    5, 8, // Move and write
+    5, 8, // Move and write
+    
+    // Self-replication core
+    9, // Loop to copy more
+      7, // Read from program
+      3, // Increment (ensure non-zero)
+      5, 8, // Move and write
+      2, // Check buffer for loop
+    10,
+  ),
+}
+
+export const STACK_BASED_REPLICATOR: FragmentExample = {
+  name: 'Stack-Based Replicator',
+  description: 'Mimics the Z80 stack-based replicators from the paper',
+  bytes: createFragment(
+    // The paper's Z80 replicators used stack operations (PUSH/POP)
+    // We simulate this with buffer operations and loops
+    
+    // Stack simulation setup
+    3, 3, 3, 3, 3, 3, 3, 3, // Buffer[0] = 8 (stack pointer)
+    
+    // "Push" values onto our simulated stack
+    1, 3, 3, 3, 3, 3, // Buffer[1] = 5
+    1, 3, 3, 3, 3, 3, 3, // Buffer[2] = 6
+    1, 3, 3, 3, 3, 3, 3, 3, // Buffer[3] = 7
+    
+    // Navigate to partner
+    2, 2, 2, // Back to buffer[0]
+    9, // Loop
+      5, 5, 5, 5, 5, 5, 5, 5, // Move 8 positions
+      4, // Decrement counter
+    10, // End loop (8 × 8 = 64)
+    
+    // "Pop" and write pattern
+    1, 7, 8, // Read and write buffer[1]
+    1, 7, 5, 8, // Read and write buffer[2]
+    1, 7, 5, 8, // Read and write buffer[3]
+    
+    // Replication loop
+    9,
+      6, 7, // Move back and read
+      1, // Next buffer position
+      5, 8, // Move forward and write
+    10,
+  ),
+}
+
 export const EXAMPLES: FragmentExample[] = [
-  SIMPLE_REPLICATOR,
-  LOOP_REPLICATOR,
-  DATA_MOVER,
-  PATTERN_GENERATOR,
+  AGGRESSIVE_REPLICATOR,
+  PALINDROMIC_REPLICATOR,
+  ZERO_TOLERANT_REPLICATOR,
 ]

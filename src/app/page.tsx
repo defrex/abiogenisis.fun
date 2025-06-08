@@ -1,32 +1,56 @@
 'use client'
 
-import { CompressionChart } from '@/components/compression-chart'
 import { FragmentCreator } from '@/components/fragment-creator'
-import { MetricsExplanation } from '@/components/metrics-explanation'
+import { MetricsTab } from '@/components/metrics-tab'
 import { OperationLegend } from '@/components/operation-legend'
-import { OpiChart } from '@/components/opi-chart'
 import { SettingsTab } from '@/components/settings-tab'
 import { SimulationDescription } from '@/components/simulation-description'
 import { Button } from '@/components/ui/button'
 import { Stack } from '@/components/ui/stack'
-import { Tabs } from '@/components/ui/tabs'
 import { Text } from '@/components/ui/text/text'
 import { VirtualFragmentList } from '@/components/virtual-fragment-list'
 import { useSimulation } from '@/hooks/use-simulation'
 import { cn } from '@/lib/utils/cn'
 import { formatNumber } from '@/lib/utils/format-number'
-import { Circle, Pause, Play, Square } from 'lucide-react'
+import { BarChart3, Circle, Info, Pause, Play, Settings, Square, Wrench, Zap } from 'lucide-react'
+import { useState } from 'react'
 
 export default function Home() {
   const { state, actions, weightedOPIHistory } = useSimulation()
+  const [activeView, setActiveView] = useState('about')
 
   return (
-    <main className="h-screen flex">
+    <main className="h-screen w-screen flex flex-row">
       {/* Left Column - Stats and Controls */}
-      <div className="w-80 border-r border-neutral-700 bg-neutral-900 p-6 overflow-y-auto">
+      <div className="w-80 border-r border-neutral-700 bg-neutral-900 p-4 overflow-y-auto">
         <Stack justify="between" className="h-full flex-grow">
           <Stack gap={6}>
-            <Stack gap={2} className="pb-6 border-b">
+            {/* Navigation Menu */}
+            <Stack gap={1} className="pb-6 border-b">
+              {[
+                { id: 'about', label: 'About', icon: Info },
+                { id: 'programs', label: 'Programs', icon: Zap },
+                { id: 'metrics', label: 'Metrics', icon: BarChart3 },
+                { id: 'settings', label: 'Settings', icon: Settings },
+                { id: 'design', label: 'Design', icon: Wrench },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveView(item.id)}
+                  className={cn(
+                    'flex items-center gap-2 w-full text-left px-3 py-2 rounded-md transition-colors',
+                    'hover:bg-neutral-800',
+                    activeView === item.id && 'bg-neutral-800 text-white',
+                    activeView !== item.id && 'text-neutral-400',
+                  )}
+                >
+                  <item.icon className="h-4 w-4" />
+                  <Text value={item.label} size="sm" />
+                </button>
+              ))}
+            </Stack>
+
+            <Stack gap={4}>
               {/* Controls and Status */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -54,7 +78,7 @@ export default function Home() {
                   </Button>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 pr-2">
                   <Circle
                     className={cn(
                       'h-3 w-3 fill-current',
@@ -87,59 +111,60 @@ export default function Home() {
                   />
                 </div>
               </div>
-            </Stack>
 
-            {/* Statistics */}
-            <Stack gap={4}>
-              <div className="flex items-center justify-between">
-                <Text value="Epoch" color="light" size="sm" />
-                <Text
-                  value={state.currentEpoch > 0 ? formatNumber(state.currentEpoch) : '—'}
-                  size="sm"
-                />
-              </div>
+              {/* Statistics */}
+              <Stack gap={4} className="p-2">
+                <div className="flex items-center justify-between">
+                  <Text value="Epoch" color="light" size="sm" />
+                  <Text
+                    value={state.currentEpoch > 0 ? formatNumber(state.currentEpoch) : '—'}
+                    size="sm"
+                  />
+                </div>
 
-              <div className="flex items-center justify-between">
-                <Text value="Interactions" color="light" size="sm" />
-                <Text
-                  value={state.interactions !== null ? formatNumber(state.interactions) : '0'}
-                  size="sm"
-                />
-              </div>
+                <div className="flex items-center justify-between">
+                  <Text value="Interactions" color="light" size="sm" />
+                  <Text
+                    value={state.interactions !== null ? formatNumber(state.interactions) : '0'}
+                    size="sm"
+                  />
+                </div>
 
-              <div className="flex items-center justify-between">
-                <Text value="Interactions/Second" color="light" size="sm" />
-                <Text
-                  value={
-                    state.interactionsPerSecond > 0
-                      ? `${formatNumber(Math.round(state.interactionsPerSecond))}/s`
-                      : '—'
-                  }
-                  size="sm"
-                />
-              </div>
+                <div className="flex items-center justify-between">
+                  <Text value="Interactions/Second" color="light" size="sm" />
+                  <Text
+                    value={
+                      state.interactionsPerSecond > 0
+                        ? `${formatNumber(Math.round(state.interactionsPerSecond))}/s`
+                        : '—'
+                    }
+                    size="sm"
+                  />
+                </div>
 
-              <div className="flex items-center justify-between">
-                <Text value="Operations/Interaction" color="light" size="sm" />
-                <Text
-                  value={state.weightedOPI > 0 ? state.weightedOPI.toFixed(1) : '—'}
-                  size="sm"
-                />
-              </div>
+                <div className="flex items-center justify-between">
+                  <Text value="Operations/Interaction" color="light" size="sm" />
+                  <Text
+                    value={state.weightedOPI > 0 ? state.weightedOPI.toFixed(1) : '—'}
+                    size="sm"
+                  />
+                </div>
 
-              <div className="flex items-center justify-between">
-                <Text value="Compression Ratio" color="light" size="sm" />
-                <Text
-                  value={
-                    state.compressionRatio.length > 0
-                      ? state.compressionRatio[state.compressionRatio.length - 1][1].toFixed(3)
-                      : '—'
-                  }
-                  size="sm"
-                />
-              </div>
+                <div className="flex items-center justify-between">
+                  <Text value="Compression Ratio" color="light" size="sm" />
+                  <Text
+                    value={
+                      state.compressionRatio.length > 0
+                        ? state.compressionRatio[state.compressionRatio.length - 1][1].toFixed(3)
+                        : '—'
+                    }
+                    size="sm"
+                  />
+                </div>
+              </Stack>
             </Stack>
           </Stack>
+
           <Stack>
             {state.debugEnabled && (
               <Stack gap={4}>
@@ -173,104 +198,45 @@ export default function Home() {
         </Stack>
       </div>
 
-      {/* Right Column - Tabbed Interface */}
+      {/* Right Column - Content Area */}
       <div className="flex-1 bg-neutral-950 flex flex-col">
-        <Tabs
-          tabs={[
-            {
-              id: 'about',
-              label: 'About',
-              content: <SimulationDescription 
-                fragmentCount={state.fragmentCount}
-                mutationRate={state.mutationRate}
+        {activeView === 'about' && (
+          <SimulationDescription
+            fragmentCount={state.fragmentCount}
+            mutationRate={state.mutationRate}
+            bitsPerPosition={state.bitsPerPosition}
+            workerPoolSize={state.workerPoolSize}
+          />
+        )}
+        {activeView === 'programs' && (
+          <div className="h-full flex flex-col overflow-hidden">
+            <div className="flex-shrink-0 p-4 border-b border-neutral-700 bg-neutral-900">
+              <OperationLegend />
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <VirtualFragmentList fragments={state.fragments} />
+            </div>
+          </div>
+        )}
+        {activeView === 'metrics' && (
+          <div className="overflow-y-auto">
+            <MetricsTab state={state} weightedOPIHistory={weightedOPIHistory} />
+          </div>
+        )}
+        {activeView === 'settings' && <SettingsTab state={state} actions={actions} />}
+        {activeView === 'design' && (
+          <div className="h-full flex flex-col">
+            <div className="flex-shrink-0 p-4 border-b border-neutral-700 bg-neutral-900">
+              <OperationLegend />
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <FragmentCreator
+                onInject={actions.injectFragment}
                 bitsPerPosition={state.bitsPerPosition}
-                workerPoolSize={state.workerPoolSize}
-              />,
-            },
-            {
-              id: 'programs',
-              label: 'Programs',
-              content: (
-                <div className="h-full flex flex-col overflow-hidden">
-                  <div className="flex-shrink-0 p-4 border-b border-neutral-700 bg-neutral-900">
-                    <OperationLegend />
-                  </div>
-                  <div className="flex-1 overflow-hidden">
-                    <VirtualFragmentList fragments={state.fragments} />
-                  </div>
-                </div>
-              ),
-            },
-            {
-              id: 'metrics',
-              label: 'Metrics',
-              content: (
-                <div className="p-6 h-full flex flex-col gap-8">
-                  {/* Compression Ratio Section */}
-                  <div className="flex-1 min-h-0">
-                    <div className="flex gap-6 h-full">
-                      <div className="flex-1 min-w-0">
-                        <Text value="Compression Ratio" size="lg" />
-                        <CompressionChart
-                          data={state.compressionRatio}
-                          bitsPerPosition={state.bitsPerPosition}
-                          className="h-full"
-                        />
-                      </div>
-                      <div className="w-72 flex-shrink-0 bg-neutral-900 rounded-lg p-4 border border-neutral-700">
-                        <MetricsExplanation
-                          metric="compression"
-                          bitsPerPosition={state.bitsPerPosition}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* OPI Section */}
-                  <div className="flex-1 min-h-0">
-                    <div className="flex gap-6 h-full">
-                      <div className="flex-1 min-w-0">
-                        <Text value="Operations Per Interaction" size="lg" />
-                        <OpiChart
-                          data={state.operationsPerInteraction}
-                          weightedData={weightedOPIHistory}
-                          bitsPerPosition={state.bitsPerPosition}
-                          className="h-full"
-                        />
-                      </div>
-                      <div className="w-72 flex-shrink-0 bg-neutral-900 rounded-lg p-4 border border-neutral-700">
-                        <MetricsExplanation metric="opi" bitsPerPosition={state.bitsPerPosition} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ),
-            },
-            {
-              id: 'settings',
-              label: 'Settings',
-              content: <SettingsTab state={state} actions={actions} />,
-            },
-            {
-              id: 'design',
-              label: 'Design',
-              content: (
-                <div className="h-full flex flex-col">
-                  <div className="flex-shrink-0 p-4 border-b border-neutral-700 bg-neutral-900 ">
-                    <OperationLegend />
-                  </div>
-                  <div className="flex-1 overflow-y-auto">
-                    <FragmentCreator
-                      onInject={actions.injectFragment}
-                      bitsPerPosition={state.bitsPerPosition}
-                    />
-                  </div>
-                </div>
-              ),
-            },
-          ]}
-          defaultTab="about"
-        />
+              />
+            </div>
+          </div>
+        )}
       </div>
     </main>
   )

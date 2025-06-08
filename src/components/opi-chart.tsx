@@ -67,7 +67,7 @@ export function OpiChart({ data, weightedData, bitsPerPosition = 6, className }:
       grid: {
         left: '3%',
         right: '4%',
-        bottom: '15%',
+        bottom: '20%',
         top: '5%', // Reduce top padding to match compression chart
         containLabel: true,
       },

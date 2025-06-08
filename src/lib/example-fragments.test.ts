@@ -1,60 +1,60 @@
 import { interact } from './interact'
-import { SIMPLE_REPLICATOR, DATA_MOVER, PATTERN_GENERATOR } from './example-fragments'
+import { PALINDROMIC_REPLICATOR, AGGRESSIVE_REPLICATOR, ZERO_TOLERANT_REPLICATOR, EXAMPLES } from './example-fragments'
 
 describe('Example Fragments', () => {
-  describe('SIMPLE_REPLICATOR', () => {
-    it('should have exactly 64 bytes', () => {
-      expect(SIMPLE_REPLICATOR.bytes.length).toBe(64)
+  // Test all examples have correct size
+  describe('All replicators', () => {
+    it('should have exactly 64 bytes each', () => {
+      EXAMPLES.forEach(example => {
+        expect(example.bytes.length).toBe(64)
+      })
     })
+  })
 
-    it('should modify program memory through self-modification', () => {
-      const replicator = new Uint8Array(SIMPLE_REPLICATOR.bytes)
-      const emptyFragment = new Uint8Array(64).fill(255)
+  describe('AGGRESSIVE_REPLICATOR', () => {
+    it('should modify partner fragment aggressively', () => {
+      const replicator = new Uint8Array(AGGRESSIVE_REPLICATOR.bytes)
+      const targetFragment = new Uint8Array(64).fill(0)
+
+      const [resultA, resultB] = interact(replicator, targetFragment)
+
+      // Count how many bytes were modified in the target
+      const modifiedCount = resultB.reduce((count, byte, i) => {
+        return byte !== targetFragment[i] ? count + 1 : count
+      }, 0)
+
+      // Aggressive replicator should modify multiple bytes
+      expect(modifiedCount).toBeGreaterThan(3)
+    })
+  })
+
+  describe('PALINDROMIC_REPLICATOR', () => {
+    it('should write signature pattern to partner', () => {
+      const replicator = new Uint8Array(PALINDROMIC_REPLICATOR.bytes)
+      const emptyFragment = new Uint8Array(64).fill(0)
 
       const [resultA, resultB] = interact(replicator, emptyFragment)
 
-      // Check if any bytes were modified
-      const modifiedA = !resultA.every((byte, i) => byte === replicator[i])
-      const modifiedB = !resultB.every((byte, i) => byte === emptyFragment[i])
-
-      // At least one fragment should be modified
-      expect(modifiedA || modifiedB).toBe(true)
+      // Check if the replicator wrote its signature (value 9) to the partner
+      const hasSignature = resultB.some(byte => byte === 9)
+      expect(hasSignature).toBe(true)
     })
   })
 
-  describe('DATA_MOVER', () => {
-    it('should have exactly 64 bytes', () => {
-      expect(DATA_MOVER.bytes.length).toBe(64)
-    })
+  describe('ZERO_TOLERANT_REPLICATOR', () => {
+    it('should write non-zero values that can overwrite zeros', () => {
+      const replicator = new Uint8Array(ZERO_TOLERANT_REPLICATOR.bytes)
+      const zeroFragment = new Uint8Array(64).fill(0)
 
-    it('should execute without errors', () => {
-      const dataMover = new Uint8Array(DATA_MOVER.bytes)
-      const testFragment = new Uint8Array(64).fill(0)
+      const [resultA, resultB] = interact(replicator, zeroFragment)
 
-      const [resultA, resultB] = interact(dataMover, testFragment)
-
-      expect(resultA).toBeDefined()
-      expect(resultB).toBeDefined()
-      expect(resultA.length).toBe(64)
-      expect(resultB.length).toBe(64)
-    })
-  })
-
-  describe('PATTERN_GENERATOR', () => {
-    it('should have exactly 64 bytes', () => {
-      expect(PATTERN_GENERATOR.bytes.length).toBe(64)
-    })
-
-    it('should execute without errors', () => {
-      const patternGen = new Uint8Array(PATTERN_GENERATOR.bytes)
-      const emptyFragment = new Uint8Array(64).fill(0)
-
-      const [resultA, resultB] = interact(patternGen, emptyFragment)
-
-      expect(resultA).toBeDefined()
-      expect(resultB).toBeDefined()
-      expect(resultA.length).toBe(64)
-      expect(resultB.length).toBe(64)
+      // Check that it wrote non-zero values
+      const nonZeroCount = resultB.filter(byte => byte !== 0).length
+      expect(nonZeroCount).toBeGreaterThan(0)
+      
+      // Check that it wrote the expected signature values (5, 6, 7)
+      const hasExpectedValues = resultB.some(byte => byte >= 5 && byte <= 7)
+      expect(hasExpectedValues).toBe(true)
     })
   })
 })

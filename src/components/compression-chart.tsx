@@ -63,7 +63,7 @@ export function CompressionChart({ data, bitsPerPosition = 6, className }: Compr
       grid: {
         left: '3%',
         right: '4%',
-        bottom: '15%',
+        bottom: '20%',
         top: '5%', // Reduce top padding
         containLabel: true,
       },

@@ -8,8 +8,9 @@ import { EXAMPLES, type FragmentExample } from '@/lib/example-fragments'
 import { interact } from '@/lib/interact'
 import { OPERATIONS_LIST, NO_OP_CONFIG, type OperationConfig } from '@/lib/operation-config'
 import { cn } from '@/lib/utils/cn'
-import { Copy, Play, Save, Trash2, Upload } from 'lucide-react'
+import { Check, Copy, Play, Save, Trash2, Upload } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { Spinner } from '@/components/ui/spinner'
 
 interface SavedFragment {
   id: string
@@ -86,6 +87,9 @@ export function FragmentCreator({ onInject, bitsPerPosition = 8 }: FragmentCreat
   const [fragmentDescription, setFragmentDescription] = useState('')
   const [loadedFragmentId, setLoadedFragmentId] = useState<string | null>(null)
 
+  // Injection state
+  const [isInjecting, setIsInjecting] = useState(false)
+
   // Test runner state
   const [testPartnerBytes, setTestPartnerBytes] = useState<number[]>([])
   const [testResult, setTestResult] = useState<{ fragmentA: number[]; fragmentB: number[] } | null>(
@@ -150,8 +154,13 @@ export function FragmentCreator({ onInject, bitsPerPosition = 8 }: FragmentCreat
     setSavedFragments(savedFragments.filter((f) => f.id !== id))
   }
 
-  const handleInject = () => {
+  const handleInject = async () => {
+    setIsInjecting(true)
     onInject(new Uint8Array(bytes))
+
+    setTimeout(() => {
+      setIsInjecting(false)
+    }, 100)
   }
 
   const handleClear = () => {
@@ -204,7 +213,13 @@ export function FragmentCreator({ onInject, bitsPerPosition = 8 }: FragmentCreat
             <Button size="sm" variant="outline" onClick={handleClear}>
               Clear
             </Button>
-            <Button size="sm" onClick={handleInject}>
+            <Button
+              size="sm"
+              onClick={handleInject}
+              disabled={isInjecting}
+              loading={isInjecting}
+              className={cn('transition-all duration-300')}
+            >
               <Upload className="h-4 w-4 mr-1" />
               Inject
             </Button>

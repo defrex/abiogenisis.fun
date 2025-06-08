@@ -24,7 +24,6 @@ export function SimulationDescription({
   fragmentCount,
   mutationRate,
   bitsPerPosition,
-  workerPoolSize,
 }: SimulationDescriptionProps) {
   return (
     <div className="p-6 h-full overflow-y-auto">
