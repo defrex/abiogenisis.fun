@@ -74,7 +74,18 @@ export function SimulationDescription({
 
         <h2>Operation Reference</h2>
 
-        <p>Each operation has a numeric code (1-10) and visual symbol in the fragment display:</p>
+        <p>
+          The instruction set is a modified version of{' '}
+          <a
+            href="https://en.wikipedia.org/wiki/Brainfuck"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Brainfuck
+          </a>{' '}
+          that enables self-modifying programs. Each operation has a numeric code (1-10) and visual
+          symbol in the fragment display.
+        </p>
 
         <div className="not-prose grid grid-cols-1 gap-2 text-sm bg-neutral-800 rounded-lg p-4 my-4">
           <div className="flex items-center gap-3">
